@@ -1,13 +1,16 @@
 import { useEffect, useRef, useState, type MouseEvent } from "react";
 import { renderPreview, type PreviewFrame } from "../lib/api";
-import type { Adjustments, Analysis, Orientation, ViewOptions } from "../lib/types";
-import { useCurrentFrame, useStore, type Histogram } from "../state/store";
+import { aspectRatio, cropPixels, FULL_CROP, MAX_ANGLE } from "../lib/crop";
+import type { Adjustments, Analysis, Crop, Orientation, ViewOptions } from "../lib/types";
+import { displaySize, useCurrentFrame, useStore, type Histogram } from "../state/store";
+import { CropOverlay } from "./CropOverlay";
 
 interface Request {
   id: number;
   adjustments: Adjustments;
   analysis: Analysis;
   orientation: Orientation;
+  crop: Crop | null;
   view: ViewOptions;
 }
 
@@ -33,7 +36,10 @@ export function Viewer() {
   const showClipping = useStore((s) => s.showClipping);
   const showNegative = useStore((s) => s.showNegative);
   const neutralMode = useStore((s) => s.neutralMode);
-  const { setHistogram, pickNeutral } = useStore.getState();
+  const cropMode = useStore((s) => s.cropMode);
+  const cropAspect = useStore((s) => s.cropAspect);
+  const cropPortrait = useStore((s) => s.cropPortrait);
+  const { setHistogram, pickNeutral, setCrop, setCropAngle, commitCrop, cancelCrop } = useStore.getState();
   const fitRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const pending = useRef<Request | null>(null);
@@ -64,7 +70,7 @@ export function Viewer() {
         pending.current = null;
         const t0 = performance.now();
         try {
-          const out = await renderPreview(req.id, req.adjustments, req.analysis, req.orientation, req.view);
+          const out = await renderPreview(req.id, req.adjustments, req.analysis, req.orientation, req.crop, req.view);
           const canvas = canvasRef.current;
           if (!canvas) continue;
           if (canvas.width !== out.width || canvas.height !== out.height) {
@@ -85,6 +91,9 @@ export function Viewer() {
     }
   };
 
+  // While cropping, show the whole frame (straightened via CSS) under the crop box.
+  const renderCrop = cropMode ? null : (frame?.crop ?? null);
+
   useEffect(() => {
     if (!frame) return;
     pending.current = {
@@ -92,18 +101,23 @@ export function Viewer() {
       adjustments: frame.adjustments,
       analysis: frame.analysis,
       orientation: frame.orientation,
+      crop: renderCrop,
       view: { showClipping, showNegative },
     };
     void pump();
-  }, [frame?.id, frame?.adjustments, frame?.analysis, frame?.orientation, showClipping, showNegative]);
+  }, [frame?.id, frame?.adjustments, frame?.analysis, frame?.orientation, renderCrop, showClipping, showNegative]);
 
   // Fit the image into the available box (like object-fit: contain), but with an
   // explicit size so clicks and overlays map 1:1 onto image coordinates.
   const scale = img && box.w > 0 ? Math.min(box.w / img.w, box.h / img.h) : 0;
   const display = img ? { width: img.w * scale, height: img.h * scale } : { width: 0, height: 0 };
 
+  const full = frame ? displaySize(frame) : null;
+  const crop = frame?.crop ?? FULL_CROP;
+  const ratio = full ? aspectRatio(cropAspect, cropPortrait, full) : null;
+
   const onClick = (e: MouseEvent<HTMLDivElement>) => {
-    if (!neutralMode || !frame) return;
+    if (!neutralMode || cropMode || !frame) return;
     const r = e.currentTarget.getBoundingClientRect();
     const u = (e.clientX - r.left) / r.width;
     const v = (e.clientY - r.top) / r.height;
@@ -113,8 +127,17 @@ export function Viewer() {
   return (
     <div className="viewer">
       <div className="viewer-fit" ref={fitRef}>
-        <div className={`viewer-image${neutralMode ? " is-picking" : ""}`} style={display} onClick={onClick}>
-          <canvas ref={canvasRef} className="viewer-canvas" />
+        <div
+          className={`viewer-image${neutralMode ? " is-picking" : ""}${cropMode ? " is-cropping" : ""}`}
+          style={display}
+          onClick={onClick}
+        >
+          <canvas
+            ref={canvasRef}
+            className="viewer-canvas"
+            style={cropMode && crop.angle ? { transform: `rotate(${crop.angle}deg)` } : undefined}
+          />
+          {cropMode && full && <CropOverlay crop={crop} size={full} ratio={ratio} onChange={setCrop} />}
           {neutralMode &&
             frame?.neutralPoints.map(([u, v], i) => (
               <span key={i} className="neutral-marker" style={{ left: `${u * 100}%`, top: `${v * 100}%` }}>
@@ -136,9 +159,44 @@ export function Viewer() {
           </span>
         )}
       </div>
-      {frame && (
+      {cropMode && frame && full && (
+        <div className="crop-bar">
+          <label>Straighten</label>
+          <input
+            type="range"
+            min={-MAX_ANGLE}
+            max={MAX_ANGLE}
+            step={0.05}
+            value={crop.angle}
+            onChange={(e) => setCropAngle(parseFloat(e.target.value))}
+            onDoubleClick={() => setCropAngle(0)}
+            onPointerUp={(e) => e.currentTarget.blur()}
+          />
+          <span className="crop-angle">
+            {crop.angle > 0 ? "+" : ""}
+            {crop.angle.toFixed(2)}°
+          </span>
+          <span className="crop-dims">
+            {cropPixels(crop, full).w} × {cropPixels(crop, full).h}
+          </span>
+          <button className="btn" onClick={cancelCrop}>
+            Cancel <kbd>Esc</kbd>
+          </button>
+          <button className="btn btn-primary" onClick={() => void commitCrop()}>
+            Done <kbd>↵</kbd>
+          </button>
+        </div>
+      )}
+      {frame && full && !cropMode && (
         <div className="viewer-info">
-          {frame.name} · {frame.width}×{frame.height} · {frame.bitDepth}-bit
+          {frame.name} · {full.w}×{full.h}
+          {frame.crop && (
+            <>
+              {" "}
+              → crop {cropPixels(frame.crop, full).w}×{cropPixels(frame.crop, full).h}
+            </>
+          )}{" "}
+          · {frame.bitDepth}-bit
           {renderMs != null && <> · {renderMs.toFixed(0)} ms</>}
         </div>
       )}

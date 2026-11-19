@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { ASPECTS } from "../lib/crop";
 import { SHORTCUT_HELP } from "../lib/shortcuts";
 import { useCurrentFrame, useStore } from "../state/store";
 import { HistogramView } from "./HistogramView";
@@ -17,6 +18,9 @@ export function RightPanel() {
   const hasClipboard = useStore((st) => st.clipboard != null);
   const selectionCount = useStore((st) => st.selection.length);
   const neutralMode = useStore((st) => st.neutralMode);
+  const cropMode = useStore((st) => st.cropMode);
+  const cropAspect = useStore((st) => st.cropAspect);
+  const cropPortrait = useStore((st) => st.cropPortrait);
   const s = useStore.getState();
   const [showKeys, setShowKeys] = useState(false);
   const disabled = !frame;
@@ -122,7 +126,47 @@ export function RightPanel() {
       </section>
 
       <section className="panel-section">
-        <h3>Transform</h3>
+        <h3>Crop &amp; Rotate</h3>
+        <div className="btn-row">
+          <button
+            className={`btn btn-toggle${cropMode ? " is-on" : ""}`}
+            disabled={disabled}
+            onClick={() => (cropMode ? void s.commitCrop() : s.enterCrop())}
+            title="Crop and straighten (C). Enter applies, Esc cancels."
+          >
+            <Icon d="M6 2v14a2 2 0 0 0 2 2h14M18 22V8a2 2 0 0 0-2-2H2" /> {cropMode ? "Done" : "Crop"} <kbd>C</kbd>
+          </button>
+          <button
+            className="btn"
+            disabled={disabled || (!cropMode && !frame?.crop)}
+            onClick={s.resetCrop}
+            title="Remove crop and straightening"
+          >
+            Reset crop
+          </button>
+        </div>
+        <div className="aspect-row">
+          <select
+            value={cropAspect}
+            disabled={disabled}
+            onChange={(e) => s.setCropAspect(e.target.value)}
+            title="Aspect ratio lock"
+          >
+            {ASPECTS.map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.label}
+              </option>
+            ))}
+          </select>
+          <button
+            className="tool tool-small"
+            disabled={disabled || cropAspect === "free" || cropAspect === "1:1"}
+            onClick={() => s.setCropAspect(cropAspect, !cropPortrait)}
+            title={cropPortrait ? "Portrait - switch to landscape" : "Landscape - switch to portrait"}
+          >
+            <Icon d={cropPortrait ? "M8 3h8a1 1 0 0 1 1 1v16a1 1 0 0 1-1 1H8a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Z" : "M3 8a1 1 0 0 1 1-1h16a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8Z"} />
+          </button>
+        </div>
         <div className="tool-row">
           <button className="tool" disabled={disabled} onClick={() => s.rotate(-1)} title="Rotate left ( [ )">
             <Icon d="M7.5 6.5H3.5V2.5M3.8 6.3A7 7 0 1 1 3 12" />

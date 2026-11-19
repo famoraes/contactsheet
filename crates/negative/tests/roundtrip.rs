@@ -2,7 +2,7 @@ use negative::{
     analyze,
     export::{export_file, write_tiff16, ExportSettings},
     synth::{demo_negative, log_ramp, negative_of},
-    Adjustments, Analysis, ImageF32, Orientation, Prepared, Rect, RgbSource,
+    Adjustments, Analysis, Crop, ImageF32, Orientation, Prepared, Rect, RgbSource,
 };
 
 /// A neutral scene ramp (L_MIN..1, log spaced) rendered as an orange-masked negative.
@@ -124,20 +124,27 @@ fn tiff_roundtrip_and_export() {
         jpeg_quality: Some(90),
         max_size: None,
     };
-    let files = export_file(&input, &an, &Adjustments::default(), Orientation::default(), &settings).unwrap();
+    let files = export_file(&input, &an, &Adjustments::default(), Orientation::default(), None, &settings).unwrap();
     assert_eq!(files.len(), 2);
     let out = negative::decode_tiff(&files[0]).unwrap();
     assert_eq!((out.width, out.height, out.bit_depth), (300, 200, 16));
 
     let small = ExportSettings { max_size: Some(150), jpeg_quality: None, ..settings };
-    let files = export_file(&input, &an, &Adjustments::default(), Orientation::default(), &small).unwrap();
+    let files = export_file(&input, &an, &Adjustments::default(), Orientation::default(), None, &small).unwrap();
     let out = negative::decode_tiff(&files[0]).unwrap();
     assert_eq!((out.width, out.height), (150, 100));
 
     let portrait = Orientation { rotation: 1, mirror: false };
-    let files = export_file(&input, &an, &Adjustments::default(), portrait, &small).unwrap();
+    let files = export_file(&input, &an, &Adjustments::default(), portrait, None, &small).unwrap();
     let out = negative::decode_tiff(&files[0]).unwrap();
     assert_eq!((out.width, out.height), (100, 150), "rotated export swaps dimensions");
+
+    // Crop the middle half, straightened 3°; the output is the crop at full resolution.
+    let crop = Crop { x: 0.25, y: 0.25, w: 0.5, h: 0.5, angle: 3.0 };
+    let full = ExportSettings { max_size: None, ..small };
+    let files = export_file(&input, &an, &Adjustments::default(), Orientation::default(), Some(crop), &full).unwrap();
+    let out = negative::decode_tiff(&files[0]).unwrap();
+    assert_eq!((out.width, out.height), (150, 100), "cropped export is the crop size");
 
     std::fs::remove_dir_all(&dir).ok();
 }

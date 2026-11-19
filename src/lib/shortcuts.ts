@@ -31,6 +31,7 @@ export const SHORTCUT_HELP: [string, string][] = [
   ["E / D", "Saturation + / −"],
   ["1 2 · 3 4 · 5 6", "Cyan · Magenta · Yellow − / +"],
   ["⇧ + adjust key", "Step by 5 instead of 1"],
+  ["C", "Crop & straighten (↵ done, Esc cancel)"],
   ["[ / ]", "Rotate left / right"],
   ["H / V", "Flip horizontal / vertical"],
   ["G", "Color / grayscale"],
@@ -56,6 +57,12 @@ export function handleKeyDown(e: KeyboardEvent, actions: { addImages: () => void
   const s = useStore.getState();
   if (s.exportOpen) {
     if (e.key === "Escape") s.setExportOpen(false);
+    return;
+  }
+  if (s.cropMode && (e.key === "Escape" || e.key === "Enter")) {
+    e.preventDefault();
+    if (e.key === "Escape") s.cancelCrop();
+    else void s.commitCrop();
     return;
   }
   if (e.key === "Escape" && s.neutralMode) {
@@ -131,6 +138,10 @@ export function handleKeyDown(e: KeyboardEvent, actions: { addImages: () => void
           break;
         case "n":
           s.toggleNeutralMode();
+          break;
+        case "c":
+          if (s.cropMode) void s.commitCrop();
+          else s.enterCrop();
           break;
       }
   }

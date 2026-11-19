@@ -1,10 +1,23 @@
 import { create } from "zustand";
 import * as api from "../lib/api";
 import {
+  aspectRatio,
+  conformAspect,
+  fitCrop,
+  flipCrop,
+  FULL_CROP,
+  isFullCrop,
+  orientedSize,
+  rotateCrop,
+  sameCrop,
+  type Size,
+} from "../lib/crop";
+import {
   DEFAULT_ADJUSTMENTS,
   DEFAULT_ORIENTATION,
   type Adjustments,
   type Analysis,
+  type Crop,
   type ExportProgress,
   type ImageMeta,
   type Orientation,
@@ -15,6 +28,8 @@ export interface Frame extends ImageMeta {
   adjustments: Adjustments;
   /** Geometry, kept apart from adjustments so copy/paste and Reset leave it alone. */
   orientation: Orientation;
+  /** Display-space crop + straighten; null = whole frame. */
+  crop: Crop | null;
   /** Neutral picks in display coordinates (markers only; the correction lives in `analysis`). */
   neutralPoints: [number, number][];
   /** Analysis from import / last Recalc; Reset returns to it. */
@@ -36,6 +51,11 @@ interface State {
   showClipping: boolean;
   showNegative: boolean;
   neutralMode: boolean;
+  cropMode: boolean;
+  /** Crop when crop mode was entered, for Cancel. */
+  cropBackup: Crop | null;
+  cropAspect: string;
+  cropPortrait: boolean;
   pendingLoads: number;
   errors: string[];
   histogram: Histogram | null;
@@ -54,6 +74,13 @@ interface State {
   pickNeutral: (u: number, v: number, addSecond: boolean) => Promise<void>;
   rotate: (quarterTurnsCw: number) => void;
   flip: (axis: "horizontal" | "vertical") => void;
+  enterCrop: () => void;
+  commitCrop: () => Promise<void>;
+  cancelCrop: () => void;
+  setCrop: (crop: Crop) => void;
+  setCropAngle: (angle: number) => void;
+  setCropAspect: (id: string, portrait?: boolean) => void;
+  resetCrop: () => void;
   resetCurrent: () => void;
   recalcCurrent: () => Promise<void>;
   copy: () => void;
@@ -72,11 +99,37 @@ const LOAD_CONCURRENCY = 3;
 
 const clamp = (v: number) => Math.max(-1, Math.min(1, Math.round(v * 100) / 100));
 
+/** Size of the frame as displayed (after rotation), before cropping. */
+export const displaySize = (f: Frame): Size => orientedSize(f.width, f.height, f.orientation);
+
 export const useStore = create<State>((set, get) => {
+  const current = () => get().frames.find((f) => f.id === get().currentId) ?? null;
+
+  const updateFrame = (id: number, fn: (f: Frame) => Frame) =>
+    set((s) => ({ frames: s.frames.map((f) => (f.id === id ? fn(f) : f)) }));
+
   const updateCurrent = (fn: (f: Frame) => Frame) => {
-    const { currentId, frames } = get();
-    if (currentId == null) return;
-    set({ frames: frames.map((f) => (f.id === currentId ? fn(f) : f)) });
+    const id = get().currentId;
+    if (id != null) updateFrame(id, fn);
+  };
+
+  const fail = (e: unknown) => set((s) => ({ errors: [...s.errors, String(e)] }));
+
+  /** Re-analyse a frame from its current crop; drops neutral picks (they were relative to the old analysis). */
+  const recalcFrame = async (id: number) => {
+    const f = get().frames.find((x) => x.id === id);
+    if (!f) return;
+    try {
+      const analysis = await api.recalc(id, f.orientation, f.crop);
+      updateFrame(id, (x) => ({ ...x, analysis, autoAnalysis: analysis, neutralPoints: [] }));
+    } catch (e) {
+      fail(e);
+    }
+  };
+
+  /** Leave crop mode before doing anything that changes the current frame. */
+  const leaveModes = () => {
+    if (get().cropMode) void get().commitCrop();
   };
 
   return {
@@ -88,6 +141,10 @@ export const useStore = create<State>((set, get) => {
     showClipping: false,
     showNegative: false,
     neutralMode: false,
+    cropMode: false,
+    cropBackup: null,
+    cropAspect: "free",
+    cropPortrait: false,
     pendingLoads: 0,
     errors: [],
     histogram: null,
@@ -111,6 +168,7 @@ export const useStore = create<State>((set, get) => {
               ...meta,
               adjustments: { ...DEFAULT_ADJUSTMENTS },
               orientation: meta.orientation ?? { ...DEFAULT_ORIENTATION },
+              crop: null,
               neutralPoints: [],
               autoAnalysis: meta.analysis,
             };
@@ -121,7 +179,7 @@ export const useStore = create<State>((set, get) => {
               anchorId: s.anchorId ?? frame.id,
             }));
           } catch (e) {
-            set((s) => ({ errors: [...s.errors, String(e)] }));
+            fail(e);
           } finally {
             set((s) => ({ pendingLoads: s.pendingLoads - 1 }));
           }
@@ -131,6 +189,7 @@ export const useStore = create<State>((set, get) => {
     },
 
     select(id, mods = {}) {
+      if (id !== get().currentId) leaveModes();
       const { frames, selection, anchorId } = get();
       if (mods.shift && anchorId != null) {
         const a = frames.findIndex((f) => f.id === anchorId);
@@ -180,41 +239,38 @@ export const useStore = create<State>((set, get) => {
       }));
     },
 
-    // Display = mirror^m ∘ rotate(r). Rotating a mirrored image clockwise equals
-    // mirroring an anticlockwise rotation, and a vertical flip is mirror ∘ rotate(180°).
     toggleNeutralMode(on) {
-      set((s) => ({ neutralMode: on ?? !s.neutralMode }));
+      const next = on ?? !get().neutralMode;
+      if (next) leaveModes();
+      set({ neutralMode: next });
     },
 
     // Click = one-point neutral (uniform cast). Shift-click adds/replaces a second point;
     // two points in different tones also fix shadow/highlight crossover casts.
     // Always computed from the automatic analysis so repeated picks don't compound.
     async pickNeutral(u, v, addSecond) {
-      const f = get().frames.find((x) => x.id === get().currentId);
+      const f = current();
       if (!f) return;
       const p: [number, number] = [u, v];
       const points: [number, number][] =
         addSecond && f.neutralPoints.length ? [f.neutralPoints[0], p] : [p];
       try {
-        const analysis = await api.neutralize(f.id, points, f.orientation, f.autoAnalysis);
-        set((s) => ({
-          frames: s.frames.map((x) =>
-            x.id === f.id
-              ? {
-                  ...x,
-                  analysis,
-                  neutralPoints: points,
-                  // The pick defines neutral; leftover C/M/Y would push it off again.
-                  adjustments: { ...x.adjustments, cyan: 0, magenta: 0, yellow: 0 },
-                }
-              : x,
-          ),
+        const analysis = await api.neutralize(f.id, points, f.orientation, f.crop, f.autoAnalysis);
+        updateFrame(f.id, (x) => ({
+          ...x,
+          analysis,
+          neutralPoints: points,
+          // The pick defines neutral; leftover C/M/Y would push it off again.
+          adjustments: { ...x.adjustments, cyan: 0, magenta: 0, yellow: 0 },
         }));
       } catch (e) {
-        set((s) => ({ errors: [...s.errors, String(e)] }));
+        fail(e);
       }
     },
 
+    // Display = mirror^m ∘ rotate(r). Rotating a mirrored image clockwise equals
+    // mirroring an anticlockwise rotation, and a vertical flip is mirror ∘ rotate(180°).
+    // The crop lives in display space, so it is carried along.
     rotate(quarterTurnsCw) {
       updateCurrent((f) => {
         const { rotation, mirror } = f.orientation;
@@ -222,9 +278,11 @@ export const useStore = create<State>((set, get) => {
         return {
           ...f,
           orientation: { rotation: (((rotation + turn) % 4) + 4) % 4, mirror },
+          crop: f.crop && rotateCrop(f.crop, quarterTurnsCw),
           neutralPoints: [],
         };
       });
+      if (get().cropMode) set((s) => ({ cropPortrait: !s.cropPortrait }));
     },
 
     flip(axis) {
@@ -234,9 +292,73 @@ export const useStore = create<State>((set, get) => {
         return {
           ...f,
           orientation: { rotation: (rotation + extra) % 4, mirror: !mirror },
+          crop: f.crop && flipCrop(f.crop, axis),
           neutralPoints: [],
         };
       });
+    },
+
+    enterCrop() {
+      const f = current();
+      if (!f || get().cropMode) return;
+      set({ cropMode: true, neutralMode: false, cropBackup: f.crop });
+      updateFrame(f.id, (x) => ({ ...x, crop: x.crop ?? { ...FULL_CROP } }));
+    },
+
+    async commitCrop() {
+      const f = current();
+      const { cropMode, cropBackup } = get();
+      if (!f || !cropMode) return;
+      const crop = isFullCrop(f.crop) ? null : f.crop;
+      set({ cropMode: false, cropBackup: null });
+      updateFrame(f.id, (x) => ({ ...x, crop }));
+      // A new crop changes what the auto analysis should look at (e.g. border removed).
+      if (!sameCrop(crop, cropBackup)) await recalcFrame(f.id);
+    },
+
+    cancelCrop() {
+      const f = current();
+      const { cropMode, cropBackup } = get();
+      if (!cropMode) return;
+      set({ cropMode: false, cropBackup: null });
+      if (f) updateFrame(f.id, (x) => ({ ...x, crop: cropBackup }));
+    },
+
+    setCrop(crop) {
+      updateCurrent((f) => ({ ...f, crop }));
+    },
+
+    setCropAngle(angle) {
+      updateCurrent((f) => {
+        const c = { ...(f.crop ?? FULL_CROP), angle };
+        const ratio = aspectRatio(get().cropAspect, get().cropPortrait, displaySize(f));
+        return { ...f, crop: conformAspect(fitCrop(c, displaySize(f)), ratio, displaySize(f)) };
+      });
+    },
+
+    setCropAspect(id, portrait) {
+      const f = current();
+      const size = f ? displaySize(f) : null;
+      const c = f?.crop ?? FULL_CROP;
+      // Default the orientation of the ratio to the current crop's shape.
+      const isPortrait =
+        portrait ?? (size ? c.h * size.h > c.w * size.w : get().cropPortrait);
+      set({ cropAspect: id, cropPortrait: isPortrait });
+      if (f && size && get().cropMode) {
+        const ratio = aspectRatio(id, isPortrait, size);
+        updateFrame(f.id, (x) => ({ ...x, crop: conformAspect({ ...c }, ratio, size) }));
+      }
+    },
+
+    resetCrop() {
+      const f = current();
+      if (!f) return;
+      if (get().cropMode) {
+        updateFrame(f.id, (x) => ({ ...x, crop: { ...FULL_CROP } }));
+      } else if (f.crop) {
+        updateFrame(f.id, (x) => ({ ...x, crop: null }));
+        void recalcFrame(f.id);
+      }
     },
 
     resetCurrent() {
@@ -250,23 +372,11 @@ export const useStore = create<State>((set, get) => {
 
     async recalcCurrent() {
       const id = get().currentId;
-      if (id == null) return;
-      try {
-        // M2: pass the crop rectangle here; null = default border-skipping inset.
-        const analysis = await api.recalc(id, null);
-        set((s) => ({
-          frames: s.frames.map((f) =>
-            f.id === id ? { ...f, analysis, autoAnalysis: analysis, neutralPoints: [] } : f,
-          ),
-        }));
-      } catch (e) {
-        set((s) => ({ errors: [...s.errors, String(e)] }));
-      }
+      if (id != null) await recalcFrame(id);
     },
 
     copy() {
-      const { frames, currentId } = get();
-      const f = frames.find((x) => x.id === currentId);
+      const f = current();
       if (f) set({ clipboard: { ...f.adjustments } });
     },
 
@@ -284,6 +394,7 @@ export const useStore = create<State>((set, get) => {
     async removeSelection() {
       const { selection, frames, currentId } = get();
       if (!selection.length) return;
+      set({ cropMode: false, cropBackup: null, neutralMode: false });
       const gone = new Set(selection);
       const idx = frames.findIndex((f) => f.id === currentId);
       const remaining = frames.filter((f) => !gone.has(f.id));

@@ -12,7 +12,7 @@ use negative::{
     export::{encode_jpeg, export_file, ExportSettings},
     neutral::{neutralize as neutralize_analysis, sample_density},
     render::{render_preview as render_preview_buf, render_rgb8},
-    Adjustments, Analysis, ImageF32, Orientation, Oriented, Prepared, Rect, RgbSource, ViewOptions,
+    Adjustments, Analysis, Crop, Framed, ImageF32, Orientation, Prepared, Rect, RgbSource, ViewOptions,
 };
 use serde::{Deserialize, Serialize};
 use tauri::{ipc::Response, AppHandle, Emitter, State};
@@ -21,6 +21,8 @@ use tauri::{ipc::Response, AppHandle, Emitter, State};
 const PROXY_LONG: u32 = 2000;
 /// Long edge of filmstrip thumbnails.
 const THUMB_LONG: u32 = 320;
+/// Analysis margin inside a user crop (the crop already excludes the border).
+const CROP_INSET: Rect = Rect { x: 0.01, y: 0.01, w: 0.98, h: 0.98 };
 
 struct LoadedImage {
     path: PathBuf,
@@ -73,6 +75,8 @@ pub struct ExportItem {
     analysis: Analysis,
     #[serde(default)]
     orientation: Orientation,
+    #[serde(default)]
+    crop: Option<Crop>,
 }
 
 #[derive(Deserialize)]
@@ -128,8 +132,9 @@ pub async fn add_image(
     blocking(move || {
         let path = PathBuf::from(path);
         let raw = decode_tiff(&path).map_err(|e| format!("{}: {e}", file_name(&path)))?;
-        let (width, height) = raw.orientation.dims(raw.width, raw.height);
-        let (bit_depth, orientation) = (raw.bit_depth, raw.orientation);
+        // Stored (unrotated) size; the UI derives display size from the orientation.
+        let (width, height, bit_depth, orientation) =
+            (raw.width, raw.height, raw.bit_depth, raw.orientation);
         let proxy = downsample(&raw, PROXY_LONG);
         drop(raw);
         let thumb = downsample(&proxy, THUMB_LONG);
@@ -176,12 +181,13 @@ pub async fn render_preview(
     adjustments: Adjustments,
     analysis: Analysis,
     orientation: Orientation,
+    crop: Option<Crop>,
     view: ViewOptions,
 ) -> Result<Response, String> {
     let img = state.get(id)?;
     blocking(move || {
         let prep = Prepared::new(&analysis, &adjustments);
-        let src = Oriented::new(&img.proxy, orientation);
+        let src = Framed::new(&img.proxy, orientation, crop);
         Ok(Response::new(render_preview_buf(&src, &prep, view)))
     })
     .await
@@ -195,11 +201,12 @@ pub async fn render_thumbnail(
     adjustments: Adjustments,
     analysis: Analysis,
     orientation: Orientation,
+    crop: Option<Crop>,
 ) -> Result<Response, String> {
     let img = state.get(id)?;
     blocking(move || {
         let prep = Prepared::new(&analysis, &adjustments);
-        let t = Oriented::new(&img.thumb, orientation);
+        let t = Framed::new(&img.thumb, orientation, crop);
         let jpeg = encode_jpeg(t.width(), t.height(), &render_rgb8(&t, &prep), 85)
             .map_err(|e| e.to_string())?;
         Ok(Response::new(jpeg))
@@ -207,16 +214,21 @@ pub async fn render_thumbnail(
     .await
 }
 
-/// Recompute the density black/white points from `region` (the crop), or the
-/// default border-skipping inset when no crop is set.
+/// Recompute the density black/white points from the cropped frame, or from the
+/// default border-skipping inset when there is no crop.
 #[tauri::command]
 pub async fn recalc(
     state: State<'_, AppState>,
     id: u32,
-    region: Option<Rect>,
+    orientation: Orientation,
+    crop: Option<Crop>,
 ) -> Result<Analysis, String> {
     let img = state.get(id)?;
-    blocking(move || Ok(analyze(&img.proxy, region.unwrap_or(Rect::DEFAULT_INSET)))).await
+    blocking(move || {
+        let region = if crop.is_some() { CROP_INSET } else { Rect::DEFAULT_INSET };
+        Ok(analyze(&Framed::new(&img.proxy, orientation, crop), region))
+    })
+    .await
 }
 
 /// Make the picked points neutral. `points` are normalized display coordinates
@@ -229,15 +241,17 @@ pub async fn neutralize(
     id: u32,
     points: Vec<[f32; 2]>,
     orientation: Orientation,
+    crop: Option<Crop>,
     analysis: Analysis,
 ) -> Result<Analysis, String> {
     let img = state.get(id)?;
     blocking(move || {
         let p = &img.proxy;
         let radius = (p.width.max(p.height) / 300).max(2) as usize;
+        let view = Framed::new(p, orientation, crop);
         let samples: Vec<[f32; 3]> = points
             .iter()
-            .map(|&[u, v]| sample_density(p, orientation, u, v, radius))
+            .map(|&[u, v]| sample_density(&view, u, v, radius))
             .collect();
         Ok(neutralize_analysis(&analysis, &samples))
     })
@@ -273,7 +287,14 @@ pub async fn export_images(
         };
         for (i, (path, item)) in jobs.into_iter().enumerate() {
             let name = file_name(&path);
-            let error = match export_file(&path, &item.analysis, &item.adjustments, item.orientation, &settings) {
+            let error = match export_file(
+                &path,
+                &item.analysis,
+                &item.adjustments,
+                item.orientation,
+                item.crop,
+                &settings,
+            ) {
                 Ok(files) => {
                     summary
                         .written

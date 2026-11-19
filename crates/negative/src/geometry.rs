@@ -95,6 +95,113 @@ impl<S: RgbSource> RgbSource for Oriented<'_, S> {
     }
 }
 
+/// Crop in display space (after orientation), normalized to the oriented image.
+///
+/// `angle` straightens the image: the picture is rotated `angle` degrees clockwise
+/// about its centre on a canvas of the same size, and `x, y, w, h` select a
+/// rectangle on that canvas.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct Crop {
+    pub x: f32,
+    pub y: f32,
+    pub w: f32,
+    pub h: f32,
+    pub angle: f32,
+}
+
+impl Default for Crop {
+    fn default() -> Self {
+        Crop { x: 0.0, y: 0.0, w: 1.0, h: 1.0, angle: 0.0 }
+    }
+}
+
+/// Below this many degrees, straightening is ignored and cropping is a plain copy.
+const ANGLE_EPSILON: f32 = 1e-3;
+
+/// A source seen through orientation, straightening and crop - everything the
+/// user sees on screen. Rendering, analysis and sampling all work on this view.
+pub struct Framed<'a, S: RgbSource> {
+    view: Oriented<'a, S>,
+    vw: usize,
+    vh: usize,
+    ow: usize,
+    oh: usize,
+    /// Crop origin on the canvas, in pixels.
+    x0: f32,
+    y0: f32,
+    cos: f32,
+    sin: f32,
+    straighten: bool,
+}
+
+impl<'a, S: RgbSource> Framed<'a, S> {
+    pub fn new(src: &'a S, orientation: Orientation, crop: Option<Crop>) -> Self {
+        let view = Oriented::new(src, orientation);
+        let (vw, vh) = (view.width() as usize, view.height() as usize);
+        let c = crop.unwrap_or_default();
+        let x = c.x.clamp(0.0, 1.0);
+        let y = c.y.clamp(0.0, 1.0);
+        let w = c.w.clamp(0.0, 1.0 - x);
+        let h = c.h.clamp(0.0, 1.0 - y);
+        let straighten = c.angle.abs() > ANGLE_EPSILON;
+        let (x0, y0) = if straighten {
+            (x * vw as f32, y * vh as f32)
+        } else {
+            // Pixel-aligned so the copy path never resamples.
+            ((x * vw as f32).round(), (y * vh as f32).round())
+        };
+        let ow = ((w * vw as f32).round() as usize).clamp(1, vw - (x0 as usize).min(vw - 1));
+        let oh = ((h * vh as f32).round() as usize).clamp(1, vh - (y0 as usize).min(vh - 1));
+        let (sin, cos) = c.angle.to_radians().sin_cos();
+        Framed { view, vw, vh, ow, oh, x0, y0, cos, sin, straighten }
+    }
+
+    #[inline]
+    fn at(&self, x: usize, y: usize) -> [f32; 3] {
+        self.view.rgb(y * self.vw + x)
+    }
+
+    /// Bilinear sample at continuous pixel-centre coordinates, clamped to the edges.
+    #[inline]
+    fn bilinear(&self, fx: f32, fy: f32) -> [f32; 3] {
+        let fx = fx.clamp(0.0, (self.vw - 1) as f32);
+        let fy = fy.clamp(0.0, (self.vh - 1) as f32);
+        let (x0, y0) = (fx.floor() as usize, fy.floor() as usize);
+        let (x1, y1) = ((x0 + 1).min(self.vw - 1), (y0 + 1).min(self.vh - 1));
+        let (tx, ty) = (fx - x0 as f32, fy - y0 as f32);
+        let (a, b, c, d) = (self.at(x0, y0), self.at(x1, y0), self.at(x0, y1), self.at(x1, y1));
+        [0, 1, 2].map(|k| {
+            let top = a[k] + (b[k] - a[k]) * tx;
+            let bottom = c[k] + (d[k] - c[k]) * tx;
+            top + (bottom - top) * ty
+        })
+    }
+}
+
+impl<S: RgbSource> RgbSource for Framed<'_, S> {
+    fn width(&self) -> u32 {
+        self.ow as u32
+    }
+    fn height(&self) -> u32 {
+        self.oh as u32
+    }
+    #[inline]
+    fn rgb(&self, i: usize) -> [f32; 3] {
+        let (i, j) = (i % self.ow, i / self.ow);
+        if !self.straighten {
+            return self.at(self.x0 as usize + i, self.y0 as usize + j);
+        }
+        // Canvas point -> oriented image point: undo the clockwise rotation about the centre.
+        let (cx, cy) = (self.vw as f32 / 2.0, self.vh as f32 / 2.0);
+        let dx = self.x0 + i as f32 + 0.5 - cx;
+        let dy = self.y0 + j as f32 + 0.5 - cy;
+        let sx = cx + dx * self.cos + dy * self.sin;
+        let sy = cy - dx * self.sin + dy * self.cos;
+        self.bilinear(sx - 0.5, sy - 0.5)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -136,6 +243,52 @@ mod tests {
         assert_eq!(top_left_of(6), (1, 0, 2, 3));
         assert_eq!(top_left_of(7), (1, 2, 2, 3));
         assert_eq!(top_left_of(8), (0, 2, 2, 3));
+    }
+
+    fn values<S: RgbSource>(v: &S) -> (u32, u32, Vec<f32>) {
+        let n = (v.width() * v.height()) as usize;
+        (v.width(), v.height(), (0..n).map(|i| v.rgb(i)[0]).collect())
+    }
+
+    fn square4() -> ImageF32 {
+        // 0..15 row-major
+        ImageF32 { width: 4, height: 4, data: (0..16).flat_map(|i| [i as f32, 0.0, 0.0]).collect() }
+    }
+
+    #[test]
+    fn framed_without_crop_matches_oriented() {
+        let img = sample();
+        let o = Orientation { rotation: 1, mirror: true };
+        assert_eq!(values(&Framed::new(&img, o, None)), values(&Oriented::new(&img, o)));
+    }
+
+    #[test]
+    fn integer_crop_copies_pixels() {
+        let img = square4();
+        let crop = Crop { x: 0.25, y: 0.25, w: 0.5, h: 0.5, angle: 0.0 };
+        assert_eq!(values(&Framed::new(&img, Orientation::default(), Some(crop))), (2, 2, vec![5.0, 6.0, 9.0, 10.0]));
+    }
+
+    #[test]
+    fn straighten_rotates_clockwise_like_css() {
+        // A 90° straighten of a square must equal a quarter turn clockwise.
+        let img = square4();
+        let crop = Crop { angle: 90.0, ..Crop::default() };
+        let (w, h, got) = values(&Framed::new(&img, Orientation::default(), Some(crop)));
+        let (_, _, want) = values(&Oriented::new(&img, Orientation { rotation: 1, mirror: false }));
+        assert_eq!((w, h), (4, 4));
+        for (g, w) in got.iter().zip(want) {
+            assert!((g - w).abs() < 1e-3, "{got:?}");
+        }
+    }
+
+    #[test]
+    fn crop_applies_after_orientation() {
+        // Rotated 90° CW, the 3x2 sample becomes 2x3 [3 0 / 4 1 / 5 2]; take the top row.
+        let img = sample();
+        let crop = Crop { x: 0.0, y: 0.0, w: 1.0, h: 1.0 / 3.0, angle: 0.0 };
+        let o = Orientation { rotation: 1, mirror: false };
+        assert_eq!(values(&Framed::new(&img, o, Some(crop))), (2, 1, vec![3.0, 0.0]));
     }
 
     #[test]

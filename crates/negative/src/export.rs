@@ -12,7 +12,7 @@ use tiff::encoder::{colortype, TiffEncoder};
 use crate::{
     analysis::Analysis,
     decode::decode_tiff,
-    geometry::{Orientation, Oriented},
+    geometry::{Crop, Framed, Orientation},
     image::{ImageF32, RgbSource},
     pipeline::{Adjustments, Prepared},
     render::{render_rgb16, render_rgb8},
@@ -107,6 +107,7 @@ pub fn export_file(
     analysis: &Analysis,
     adjustments: &Adjustments,
     orientation: Orientation,
+    crop: Option<Crop>,
     settings: &ExportSettings,
 ) -> Result<Vec<PathBuf>> {
     let raw = decode_tiff(input)?;
@@ -119,11 +120,10 @@ pub fn export_file(
             .unwrap_or_else(|| "image".into())
     );
     std::fs::create_dir_all(&settings.out_dir)?;
-    match settings.max_size.and_then(|m| resize_to(&raw, m)) {
-        Some(small) => {
-            drop(raw);
-            write_outputs(&Oriented::new(&small, orientation), &prep, &stem, settings)
-        }
-        None => write_outputs(&Oriented::new(&raw, orientation), &prep, &stem, settings),
+    // Geometry first, then resize, so the size limit applies to the final frame.
+    let framed = Framed::new(&raw, orientation, crop);
+    match settings.max_size.and_then(|m| resize_to(&framed, m)) {
+        Some(small) => write_outputs(&small, &prep, &stem, settings),
+        None => write_outputs(&framed, &prep, &stem, settings),
     }
 }

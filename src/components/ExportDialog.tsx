@@ -43,6 +43,7 @@ export function ExportDialog() {
           adjustments: f.adjustments,
           analysis: f.analysis,
           orientation: f.orientation,
+          crop: f.crop,
         })),
         { outDir, tiff, jpeg, jpegQuality: quality, maxSize: resize ? maxSize : null },
       );

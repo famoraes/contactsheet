@@ -31,6 +31,6 @@ pub mod synth;
 pub use analysis::{analyze, Analysis, Rect};
 pub use decode::{decode_tiff, RawImage};
 pub use error::{Error, Result};
-pub use geometry::{Orientation, Oriented};
+pub use geometry::{Crop, Framed, Orientation, Oriented};
 pub use image::{downsample, ImageF32, RgbSource};
 pub use pipeline::{Adjustments, Look, Prepared, ViewOptions};

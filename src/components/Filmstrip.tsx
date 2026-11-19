@@ -27,7 +27,7 @@ const Thumb = memo(function Thumb({
     first.current = false;
     const timer = window.setTimeout(async () => {
       try {
-        const blob = await renderThumbnail(frame.id, frame.adjustments, frame.analysis, frame.orientation);
+        const blob = await renderThumbnail(frame.id, frame.adjustments, frame.analysis, frame.orientation, frame.crop);
         if (cancelled) return;
         if (urlRef.current) URL.revokeObjectURL(urlRef.current);
         urlRef.current = URL.createObjectURL(blob);
@@ -40,7 +40,7 @@ const Thumb = memo(function Thumb({
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [frame.id, frame.adjustments, frame.analysis, frame.orientation]);
+  }, [frame.id, frame.adjustments, frame.analysis, frame.orientation, frame.crop]);
 
   useEffect(
     () => () => {

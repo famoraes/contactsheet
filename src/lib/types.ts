@@ -25,6 +25,15 @@ export interface Orientation {
 
 export const DEFAULT_ORIENTATION: Orientation = { rotation: 0, mirror: false };
 
+/** Display-space crop, normalized to the oriented image; `angle` straightens (degrees, clockwise). */
+export interface Crop {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  angle: number;
+}
+
 export interface Rect {
   x: number;
   y: number;
@@ -41,6 +50,7 @@ export interface ImageMeta {
   id: number;
   name: string;
   path: string;
+  /** Stored (unrotated) pixel size. */
   width: number;
   height: number;
   bitDepth: number;

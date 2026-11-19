@@ -9,7 +9,6 @@
 
 use crate::{
     analysis::{density, Analysis},
-    geometry::{Orientation, Oriented},
     image::RgbSource,
 };
 
@@ -18,17 +17,11 @@ const MIN_TONAL_SEPARATION: f32 = 0.1;
 /// Limit on how much a channel's contrast may be rescaled relative to the others.
 const SLOPE_LIMIT: (f32, f32) = (0.5, 2.0);
 
-/// Mean density of a square patch centred at normalized display coordinates
-/// (`u`, `v` in 0..1, after `orientation`). Averages transmittance first, which
-/// behaves like a larger measuring aperture and suppresses grain.
-pub fn sample_density<S: RgbSource>(
-    src: &S,
-    orientation: Orientation,
-    u: f32,
-    v: f32,
-    radius: usize,
-) -> [f32; 3] {
-    let view = Oriented::new(src, orientation);
+/// Mean density of a square patch centred at normalized coordinates (`u`, `v` in
+/// 0..1) of `view` - pass a [`crate::Framed`] view to sample what is on screen.
+/// Averages transmittance first, which behaves like a larger measuring aperture
+/// and suppresses grain.
+pub fn sample_density<S: RgbSource>(view: &S, u: f32, v: f32, radius: usize) -> [f32; 3] {
     let (w, h) = (view.width() as usize, view.height() as usize);
     let cx = ((u.clamp(0.0, 1.0) * w as f32) as usize).min(w - 1);
     let cy = ((v.clamp(0.0, 1.0) * h as f32) as usize).min(h - 1);
@@ -154,16 +147,17 @@ mod tests {
 
     #[test]
     fn sampling_follows_orientation() {
-        use crate::image::ImageF32;
+        use crate::{image::ImageF32, Oriented, Orientation};
         // 4x2 image: left half transmittance 0.1, right half 0.5.
         let data = (0..8)
             .flat_map(|i| if i % 4 < 2 { [0.1f32; 3] } else { [0.5f32; 3] })
             .collect();
         let img = ImageF32 { width: 4, height: 2, data };
-        let left = sample_density(&img, Orientation::default(), 0.1, 0.5, 0);
+        let left = sample_density(&img, 0.1, 0.5, 0);
         assert!((left[0] - 1.0).abs() < 1e-5);
         // Mirrored, the left of the screen shows the stored right half.
-        let mirrored = sample_density(&img, Orientation { rotation: 0, mirror: true }, 0.1, 0.5, 0);
+        let view = Oriented::new(&img, Orientation { rotation: 0, mirror: true });
+        let mirrored = sample_density(&view, 0.1, 0.5, 0);
         assert!((mirrored[0] - density(0.5)).abs() < 1e-5);
     }
 }
