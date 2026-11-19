@@ -45,6 +45,8 @@ export interface ImageMeta {
   height: number;
   bitDepth: number;
   analysis: Analysis;
+  /** From the file's TIFF Orientation tag. */
+  orientation: Orientation;
 }
 
 export interface ExportOptions {

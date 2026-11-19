@@ -16,6 +16,7 @@ export function RightPanel() {
   const frame = useCurrentFrame();
   const hasClipboard = useStore((st) => st.clipboard != null);
   const selectionCount = useStore((st) => st.selection.length);
+  const neutralMode = useStore((st) => st.neutralMode);
   const s = useStore.getState();
   const [showKeys, setShowKeys] = useState(false);
   const disabled = !frame;
@@ -94,14 +95,30 @@ export function RightPanel() {
           track="linear-gradient(90deg, #4a73e0, #e3c534)"
           onChange={(v) => s.setAdjustment("yellow", v)}
         />
-        <button
-          className="btn btn-block"
-          disabled={disabled}
-          onClick={() => void s.recalcCurrent()}
-          title="Recompute the base correction from the image area (excluding borders)"
-        >
-          Recalc <kbd>R</kbd>
-        </button>
+        <div className="btn-row btn-row-top">
+          <button
+            className={`btn btn-toggle${neutralMode ? " is-on" : ""}`}
+            disabled={disabled}
+            onClick={() => s.toggleNeutralMode()}
+            title="Click something that should be gray. Shift-click a second gray in a different tone (e.g. a shadow and a highlight) to also fix casts that differ between shadows and highlights."
+          >
+            <Icon d="m2 22 1-1h3l9-9M3 21v-3l9-9m3-3 3.4-3.4a2.1 2.1 0 1 1 3 3L18 9l.4.4a2.1 2.1 0 1 1-3 3l-3.8-3.8a2.1 2.1 0 1 1 3-3l.4.4Z" /> Neutral <kbd>N</kbd>
+          </button>
+          <button
+            className="btn"
+            disabled={disabled}
+            onClick={() => void s.recalcCurrent()}
+            title="Recompute the base correction from the image area (excluding borders)"
+          >
+            Recalc <kbd>R</kbd>
+          </button>
+        </div>
+        {neutralMode && (
+          <p className="panel-hint">
+            Click a gray. <b>⇧-click</b> a second gray in another tone to fix shadow/highlight casts too.
+            {frame && frame.neutralPoints.length > 0 && <> Using {frame.neutralPoints.length} point{frame.neutralPoints.length > 1 ? "s" : ""}.</>}
+          </p>
+        )}
       </section>
 
       <section className="panel-section">

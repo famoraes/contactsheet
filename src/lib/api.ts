@@ -47,6 +47,14 @@ export async function renderThumbnail(
 export const recalc = (id: number, region: Rect | null) =>
   invoke<Analysis>("recalc", { id, region });
 
+/** Points are normalized display coordinates; `analysis` should be the automatic one. */
+export const neutralize = (
+  id: number,
+  points: [number, number][],
+  orientation: Orientation,
+  analysis: Analysis,
+) => invoke<Analysis>("neutralize", { id, points, orientation, analysis });
+
 export const exportImages = (
   items: { id: number; adjustments: Adjustments; analysis: Analysis; orientation: Orientation }[],
   options: ExportOptions,

@@ -10,6 +10,7 @@ use std::{
 use negative::{
     analyze, decode_tiff, downsample,
     export::{encode_jpeg, export_file, ExportSettings},
+    neutral::{neutralize as neutralize_analysis, sample_density},
     render::{render_preview as render_preview_buf, render_rgb8},
     Adjustments, Analysis, ImageF32, Orientation, Oriented, Prepared, Rect, RgbSource, ViewOptions,
 };
@@ -60,6 +61,8 @@ pub struct ImageMeta {
     height: u32,
     bit_depth: u8,
     analysis: Analysis,
+    /// Initial orientation from the file's TIFF Orientation tag.
+    orientation: Orientation,
 }
 
 #[derive(Deserialize)]
@@ -125,7 +128,8 @@ pub async fn add_image(
     blocking(move || {
         let path = PathBuf::from(path);
         let raw = decode_tiff(&path).map_err(|e| format!("{}: {e}", file_name(&path)))?;
-        let (width, height, bit_depth) = (raw.width, raw.height, raw.bit_depth);
+        let (width, height) = raw.orientation.dims(raw.width, raw.height);
+        let (bit_depth, orientation) = (raw.bit_depth, raw.orientation);
         let proxy = downsample(&raw, PROXY_LONG);
         drop(raw);
         let thumb = downsample(&proxy, THUMB_LONG);
@@ -139,6 +143,7 @@ pub async fn add_image(
             height,
             bit_depth,
             analysis,
+            orientation,
         };
         st.shared
             .images
@@ -212,6 +217,31 @@ pub async fn recalc(
 ) -> Result<Analysis, String> {
     let img = state.get(id)?;
     blocking(move || Ok(analyze(&img.proxy, region.unwrap_or(Rect::DEFAULT_INSET)))).await
+}
+
+/// Make the picked points neutral. `points` are normalized display coordinates
+/// (after `orientation`); one point fixes a uniform cast, two points in different
+/// tones also fix shadow/highlight crossover. Returns the corrected analysis,
+/// computed from `analysis` (pass the automatic one so picks don't compound).
+#[tauri::command]
+pub async fn neutralize(
+    state: State<'_, AppState>,
+    id: u32,
+    points: Vec<[f32; 2]>,
+    orientation: Orientation,
+    analysis: Analysis,
+) -> Result<Analysis, String> {
+    let img = state.get(id)?;
+    blocking(move || {
+        let p = &img.proxy;
+        let radius = (p.width.max(p.height) / 300).max(2) as usize;
+        let samples: Vec<[f32; 3]> = points
+            .iter()
+            .map(|&[u, v]| sample_density(p, orientation, u, v, radius))
+            .collect();
+        Ok(neutralize_analysis(&analysis, &samples))
+    })
+    .await
 }
 
 /// Export full-resolution positives. Emits `export-progress` after each frame.

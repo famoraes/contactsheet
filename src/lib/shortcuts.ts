@@ -34,6 +34,7 @@ export const SHORTCUT_HELP: [string, string][] = [
   ["[ / ]", "Rotate left / right"],
   ["H / V", "Flip horizontal / vertical"],
   ["G", "Color / grayscale"],
+  ["N", "Neutral picker (⇧-click: 2nd point)"],
   ["R", "Recalc"],
   ["X", "Show clipping"],
   ["B", "Before / after"],
@@ -55,6 +56,10 @@ export function handleKeyDown(e: KeyboardEvent, actions: { addImages: () => void
   const s = useStore.getState();
   if (s.exportOpen) {
     if (e.key === "Escape") s.setExportOpen(false);
+    return;
+  }
+  if (e.key === "Escape" && s.neutralMode) {
+    s.toggleNeutralMode(false);
     return;
   }
   const mod = e.metaKey || e.ctrlKey;
@@ -123,6 +128,9 @@ export function handleKeyDown(e: KeyboardEvent, actions: { addImages: () => void
           break;
         case "r":
           void s.recalcCurrent();
+          break;
+        case "n":
+          s.toggleNeutralMode();
           break;
       }
   }

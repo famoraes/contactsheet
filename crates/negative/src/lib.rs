@@ -23,6 +23,7 @@ pub mod error;
 pub mod export;
 pub mod geometry;
 pub mod image;
+pub mod neutral;
 pub mod pipeline;
 pub mod render;
 pub mod synth;

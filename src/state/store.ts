@@ -15,6 +15,8 @@ export interface Frame extends ImageMeta {
   adjustments: Adjustments;
   /** Geometry, kept apart from adjustments so copy/paste and Reset leave it alone. */
   orientation: Orientation;
+  /** Neutral picks in display coordinates (markers only; the correction lives in `analysis`). */
+  neutralPoints: [number, number][];
   /** Analysis from import / last Recalc; Reset returns to it. */
   autoAnalysis: Analysis;
 }
@@ -33,6 +35,7 @@ interface State {
   clipboard: Adjustments | null;
   showClipping: boolean;
   showNegative: boolean;
+  neutralMode: boolean;
   pendingLoads: number;
   errors: string[];
   histogram: Histogram | null;
@@ -47,6 +50,8 @@ interface State {
   setAdjustment: (key: SliderKey, value: number) => void;
   nudge: (key: SliderKey, delta: number) => void;
   toggleGrayscale: () => void;
+  toggleNeutralMode: (on?: boolean) => void;
+  pickNeutral: (u: number, v: number, addSecond: boolean) => Promise<void>;
   rotate: (quarterTurnsCw: number) => void;
   flip: (axis: "horizontal" | "vertical") => void;
   resetCurrent: () => void;
@@ -82,6 +87,7 @@ export const useStore = create<State>((set, get) => {
     clipboard: null,
     showClipping: false,
     showNegative: false,
+    neutralMode: false,
     pendingLoads: 0,
     errors: [],
     histogram: null,
@@ -104,7 +110,8 @@ export const useStore = create<State>((set, get) => {
             const frame: Frame = {
               ...meta,
               adjustments: { ...DEFAULT_ADJUSTMENTS },
-              orientation: { ...DEFAULT_ORIENTATION },
+              orientation: meta.orientation ?? { ...DEFAULT_ORIENTATION },
+              neutralPoints: [],
               autoAnalysis: meta.analysis,
             };
             set((s) => ({
@@ -175,11 +182,48 @@ export const useStore = create<State>((set, get) => {
 
     // Display = mirror^m ∘ rotate(r). Rotating a mirrored image clockwise equals
     // mirroring an anticlockwise rotation, and a vertical flip is mirror ∘ rotate(180°).
+    toggleNeutralMode(on) {
+      set((s) => ({ neutralMode: on ?? !s.neutralMode }));
+    },
+
+    // Click = one-point neutral (uniform cast). Shift-click adds/replaces a second point;
+    // two points in different tones also fix shadow/highlight crossover casts.
+    // Always computed from the automatic analysis so repeated picks don't compound.
+    async pickNeutral(u, v, addSecond) {
+      const f = get().frames.find((x) => x.id === get().currentId);
+      if (!f) return;
+      const p: [number, number] = [u, v];
+      const points: [number, number][] =
+        addSecond && f.neutralPoints.length ? [f.neutralPoints[0], p] : [p];
+      try {
+        const analysis = await api.neutralize(f.id, points, f.orientation, f.autoAnalysis);
+        set((s) => ({
+          frames: s.frames.map((x) =>
+            x.id === f.id
+              ? {
+                  ...x,
+                  analysis,
+                  neutralPoints: points,
+                  // The pick defines neutral; leftover C/M/Y would push it off again.
+                  adjustments: { ...x.adjustments, cyan: 0, magenta: 0, yellow: 0 },
+                }
+              : x,
+          ),
+        }));
+      } catch (e) {
+        set((s) => ({ errors: [...s.errors, String(e)] }));
+      }
+    },
+
     rotate(quarterTurnsCw) {
       updateCurrent((f) => {
         const { rotation, mirror } = f.orientation;
         const turn = mirror ? -quarterTurnsCw : quarterTurnsCw;
-        return { ...f, orientation: { rotation: (((rotation + turn) % 4) + 4) % 4, mirror } };
+        return {
+          ...f,
+          orientation: { rotation: (((rotation + turn) % 4) + 4) % 4, mirror },
+          neutralPoints: [],
+        };
       });
     },
 
@@ -187,7 +231,11 @@ export const useStore = create<State>((set, get) => {
       updateCurrent((f) => {
         const { rotation, mirror } = f.orientation;
         const extra = axis === "vertical" ? 2 : 0;
-        return { ...f, orientation: { rotation: (rotation + extra) % 4, mirror: !mirror } };
+        return {
+          ...f,
+          orientation: { rotation: (rotation + extra) % 4, mirror: !mirror },
+          neutralPoints: [],
+        };
       });
     },
 
@@ -196,6 +244,7 @@ export const useStore = create<State>((set, get) => {
         ...f,
         adjustments: { ...DEFAULT_ADJUSTMENTS },
         analysis: f.autoAnalysis,
+        neutralPoints: [],
       }));
     },
 
@@ -207,7 +256,7 @@ export const useStore = create<State>((set, get) => {
         const analysis = await api.recalc(id, null);
         set((s) => ({
           frames: s.frames.map((f) =>
-            f.id === id ? { ...f, analysis, autoAnalysis: analysis } : f,
+            f.id === id ? { ...f, analysis, autoAnalysis: analysis, neutralPoints: [] } : f,
           ),
         }));
       } catch (e) {

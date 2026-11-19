@@ -17,6 +17,21 @@ impl Orientation {
         self.rotation % 4 == 0 && !self.mirror
     }
 
+    /// Map a TIFF/EXIF Orientation tag (1-8) to the transform that displays it upright.
+    pub fn from_tiff_tag(tag: u16) -> Self {
+        let (rotation, mirror) = match tag {
+            2 => (0, true),  // mirrored horizontally
+            3 => (2, false), // rotated 180°
+            4 => (2, true),  // mirrored vertically
+            5 => (1, true),  // transposed
+            6 => (1, false), // needs 90° clockwise
+            7 => (3, true),  // transversed
+            8 => (3, false), // needs 90° anticlockwise
+            _ => (0, false),
+        };
+        Orientation { rotation, mirror }
+    }
+
     /// Output dimensions for a `width` x `height` source.
     pub fn dims(self, width: u32, height: u32) -> (u32, u32) {
         if self.rotation % 2 == 1 {
@@ -55,7 +70,7 @@ impl<'a, S: RgbSource> Oriented<'a, S> {
 
     /// Output pixel -> source pixel.
     #[inline]
-    fn source_xy(&self, ox: usize, oy: usize) -> (usize, usize) {
+    pub fn source_xy(&self, ox: usize, oy: usize) -> (usize, usize) {
         let ox = if self.mirror { self.ow - 1 - ox } else { ox };
         match self.rotation {
             0 => (ox, oy),
@@ -98,6 +113,29 @@ mod tests {
         let v = Oriented::new(&img, o);
         let n = (v.width() * v.height()) as usize;
         (v.width(), v.height(), (0..n).map(|i| v.rgb(i)[0] as u32).collect())
+    }
+
+    #[test]
+    fn tiff_tags_match_their_definitions() {
+        // 3x2 source; check where the stored top-left pixel (0) ends up on screen.
+        let img = sample();
+        let top_left_of = |tag| {
+            let v = Oriented::new(&img, Orientation::from_tiff_tag(tag));
+            let n = (v.width() * v.height()) as usize;
+            let pos = (0..n).position(|i| v.rgb(i)[0] == 0.0).unwrap();
+            let w = v.width() as usize;
+            (pos % w, pos / w, v.width(), v.height())
+        };
+        // Stored row 0 is the visual: 1 top, 2 top (mirrored), 3 bottom, 4 bottom (mirrored),
+        // 5 left column, 6 right column, 7 right column (from bottom), 8 left column (from bottom).
+        assert_eq!(top_left_of(1), (0, 0, 3, 2));
+        assert_eq!(top_left_of(2), (2, 0, 3, 2));
+        assert_eq!(top_left_of(3), (2, 1, 3, 2));
+        assert_eq!(top_left_of(4), (0, 1, 3, 2));
+        assert_eq!(top_left_of(5), (0, 0, 2, 3));
+        assert_eq!(top_left_of(6), (1, 0, 2, 3));
+        assert_eq!(top_left_of(7), (1, 2, 2, 3));
+        assert_eq!(top_left_of(8), (0, 2, 2, 3));
     }
 
     #[test]

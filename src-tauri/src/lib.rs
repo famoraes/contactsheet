@@ -13,6 +13,7 @@ pub fn run() {
             commands::render_preview,
             commands::render_thumbnail,
             commands::recalc,
+            commands::neutralize,
             commands::export_images,
         ])
         .run(tauri::generate_context!())

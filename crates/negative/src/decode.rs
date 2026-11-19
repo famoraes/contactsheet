@@ -2,10 +2,11 @@ use std::{fs::File, io::BufReader, path::Path};
 
 use tiff::{
     decoder::{Decoder, DecodingResult, Limits},
+    tags::Tag,
     ColorType,
 };
 
-use crate::{image::RgbSource, Error, Result};
+use crate::{geometry::Orientation, image::RgbSource, Error, Result};
 
 /// Raw decoded samples, kept in their native type to avoid a full-size f32 copy.
 pub enum Samples {
@@ -22,12 +23,20 @@ pub struct RawImage {
     pub channels: usize,
     pub bit_depth: u8,
     pub samples: Samples,
+    /// From the TIFF Orientation tag: how the stored pixels should be displayed.
+    pub orientation: Orientation,
 }
 
 pub fn decode_tiff(path: &Path) -> Result<RawImage> {
     let file = File::open(path)?;
     let mut dec = Decoder::new(BufReader::new(file))?.with_limits(Limits::unlimited());
     let (width, height) = dec.dimensions()?;
+    let orientation = dec
+        .find_tag_unsigned::<u16>(Tag::Orientation)
+        .ok()
+        .flatten()
+        .map(Orientation::from_tiff_tag)
+        .unwrap_or_default();
     let (channels, bit_depth) = match dec.colortype()? {
         ColorType::Gray(b) => (1, b),
         ColorType::GrayA(b) => (2, b),
@@ -68,6 +77,7 @@ pub fn decode_tiff(path: &Path) -> Result<RawImage> {
         channels,
         bit_depth,
         samples,
+        orientation,
     })
 }
 

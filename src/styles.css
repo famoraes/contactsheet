@@ -162,6 +162,20 @@ kbd {
 .btn-row .btn {
   flex: 1;
   padding: 0 6px;
+  gap: 4px;
+}
+.btn-row-top {
+  margin-top: 10px;
+}
+.panel-hint {
+  margin: 8px 0 0;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--text-dim);
+}
+.panel-hint b {
+  color: var(--text);
+  font-weight: 600;
 }
 .link {
   background: none;
@@ -203,13 +217,39 @@ kbd {
 .viewer {
   position: absolute;
   inset: 0;
-  padding: 24px;
+}
+.viewer-fit {
+  position: absolute;
+  inset: 28px 24px 24px;
+  display: grid;
+  place-items: center;
+}
+.viewer-image {
+  position: relative;
+}
+.viewer-image.is-picking {
+  cursor: crosshair;
 }
 .viewer-canvas {
   width: 100%;
   height: 100%;
-  object-fit: contain;
   display: block;
+}
+.neutral-marker {
+  position: absolute;
+  width: 22px;
+  height: 22px;
+  margin: -11px 0 0 -11px;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  box-shadow: 0 0 0 1.5px #000a, inset 0 0 0 1.5px #000a;
+  display: grid;
+  place-items: center;
+  font-size: 10px;
+  font-weight: 700;
+  color: #fff;
+  text-shadow: 0 0 3px #000;
+  pointer-events: none;
 }
 .viewer-badges {
   position: absolute;
