@@ -31,13 +31,32 @@ pub struct ViewOptions {
     pub show_clipping: bool,
 }
 
-/// log10 scene range that the normalized density range is mapped onto.
-/// 2.2 (~7.3 stops) puts an 18% grey near the middle of the sRGB scale.
-pub const PRINT_RANGE: f32 = 2.2;
+/// The "paper": how normalized exposure becomes print tones. Presets pick one.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Look {
+    /// log10 scene range the normalized density range is mapped onto.
+    /// Larger = deeper blacks and more contrast in the shadows.
+    pub print_range: f32,
+    /// Display-space S-curve strength (0 = none, < 1 keeps it monotonic).
+    pub paper_s: f32,
+}
+
+impl Look {
+    /// Punchy but with open shadows (tuned on Epson V800 / SilverFast colour scans).
+    pub const NORMAL: Look = Look { print_range: 2.0, paper_s: 0.15 };
+    /// Lower contrast, more shadow detail; a good base for further editing.
+    pub const FLAT: Look = Look { print_range: 1.7, paper_s: 0.05 };
+}
+
+impl Default for Look {
+    fn default() -> Self {
+        Look::NORMAL
+    }
+}
+
 /// Contrast pivot in normalized exposure; ~ where 18% grey lands.
 const PIVOT: f32 = 0.7;
-/// Gentle paper S-curve strength applied in display space (0 = none, < 1 keeps it monotonic).
-const PAPER_S: f32 = 0.25;
 /// Normalized exposure shift per unit of the density slider (~1.8 stops at the extremes).
 const DENSITY_STEP: f32 = 0.25;
 /// Normalized exposure shift per unit of a C/M/Y slider.
@@ -59,10 +78,16 @@ pub struct Prepared {
     inv_range: f32,
     saturation: f32,
     grayscale: bool,
+    paper_s: f32,
 }
 
 impl Prepared {
     pub fn new(an: &Analysis, adj: &Adjustments) -> Self {
+        Self::with_look(an, adj, &Look::default())
+    }
+
+    pub fn with_look(an: &Analysis, adj: &Adjustments, look: &Look) -> Self {
+        let range = look.print_range.max(0.5);
         let k = 2f32.powf(adj.contrast.clamp(-1.0, 1.0));
         let dens = adj.density * DENSITY_STEP;
         let offsets = [
@@ -76,10 +101,10 @@ impl Prepared {
             let span = (an.hi[c] - an.lo[c]).max(1e-3);
             let a = k / span;
             let b = (-an.lo[c] / span + offsets[c] - PIVOT) * k + PIVOT;
-            exponent[c] = -a * PRINT_RANGE;
-            scale[c] = 10f32.powf((b - 1.0) * PRINT_RANGE);
+            exponent[c] = -a * range;
+            scale[c] = 10f32.powf((b - 1.0) * range);
         }
-        let black = 10f32.powf(-PRINT_RANGE);
+        let black = 10f32.powf(-range);
         Prepared {
             exponent,
             scale,
@@ -87,6 +112,7 @@ impl Prepared {
             inv_range: 1.0 / (1.0 - black),
             saturation: (1.0 + adj.saturation).max(0.0),
             grayscale: adj.grayscale,
+            paper_s: look.paper_s.clamp(0.0, 0.95),
         }
     }
 
@@ -122,7 +148,7 @@ impl Prepared {
             } else if l[c] >= 1.0 {
                 clip |= CLIP_HIGHLIGHT;
             }
-            out[c] = paper(srgb_encode(l[c].clamp(0.0, 1.0)));
+            out[c] = paper(srgb_encode(l[c].clamp(0.0, 1.0)), self.paper_s);
         }
         (out, clip)
     }
@@ -139,6 +165,6 @@ pub fn srgb_encode(l: f32) -> f32 {
 
 /// Cubic S-curve that keeps 0, 0.5 and 1 fixed.
 #[inline]
-fn paper(y: f32) -> f32 {
-    (y + PAPER_S * y * (1.0 - y) * (2.0 * y - 1.0)).clamp(0.0, 1.0)
+fn paper(y: f32, s: f32) -> f32 {
+    (y + s * y * (1.0 - y) * (2.0 * y - 1.0)).clamp(0.0, 1.0)
 }

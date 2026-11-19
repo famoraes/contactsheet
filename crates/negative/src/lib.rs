@@ -30,4 +30,4 @@ pub use analysis::{analyze, Analysis, Rect};
 pub use decode::{decode_tiff, RawImage};
 pub use error::{Error, Result};
 pub use image::{downsample, ImageF32, RgbSource};
-pub use pipeline::{Adjustments, Prepared, ViewOptions};
+pub use pipeline::{Adjustments, Look, Prepared, ViewOptions};
