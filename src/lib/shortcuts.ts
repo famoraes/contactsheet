@@ -1,22 +1,27 @@
 import { useStore } from "../state/store";
 import type { SliderKey } from "./types";
 
-const STEP = 0.05;
+/** One slider unit (sliders display -100..100). Shift multiplies by BIG_STEP. */
+const STEP = 0.01;
+const BIG_STEP = 5;
 
-/** Single-key adjustments, SmartConvert-style: everything reachable without the mouse. */
+/**
+ * Single-key adjustments, SmartConvert-style: everything reachable without the mouse.
+ * Keyed by `KeyboardEvent.code` so Shift+digit still matches (e.key would be "!" etc.).
+ */
 const NUDGES: Record<string, [SliderKey, number]> = {
-  q: ["density", STEP],
-  a: ["density", -STEP],
-  w: ["contrast", STEP],
-  s: ["contrast", -STEP],
-  e: ["saturation", STEP],
-  d: ["saturation", -STEP],
-  "1": ["cyan", -STEP],
-  "2": ["cyan", STEP],
-  "3": ["magenta", -STEP],
-  "4": ["magenta", STEP],
-  "5": ["yellow", -STEP],
-  "6": ["yellow", STEP],
+  KeyQ: ["density", 1],
+  KeyA: ["density", -1],
+  KeyW: ["contrast", 1],
+  KeyS: ["contrast", -1],
+  KeyE: ["saturation", 1],
+  KeyD: ["saturation", -1],
+  Digit1: ["cyan", -1],
+  Digit2: ["cyan", 1],
+  Digit3: ["magenta", -1],
+  Digit4: ["magenta", 1],
+  Digit5: ["yellow", -1],
+  Digit6: ["yellow", 1],
 };
 
 export const SHORTCUT_HELP: [string, string][] = [
@@ -25,6 +30,7 @@ export const SHORTCUT_HELP: [string, string][] = [
   ["W / S", "Contrast + / −"],
   ["E / D", "Saturation + / −"],
   ["1 2 · 3 4 · 5 6", "Cyan · Magenta · Yellow − / +"],
+  ["⇧ + adjust key", "Step by 5 instead of 1"],
   ["G", "Color / grayscale"],
   ["R", "Recalc"],
   ["X", "Show clipping"],
@@ -69,10 +75,10 @@ export function handleKeyDown(e: KeyboardEvent, actions: { addImages: () => void
   }
   if (e.altKey) return;
 
-  const nudge = NUDGES[key];
+  const nudge = NUDGES[e.code];
   if (nudge) {
     e.preventDefault();
-    s.nudge(nudge[0], nudge[1]);
+    s.nudge(nudge[0], nudge[1] * STEP * (e.shiftKey ? BIG_STEP : 1));
     return;
   }
   switch (e.key) {
