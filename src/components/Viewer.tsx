@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { renderPreview, type PreviewFrame } from "../lib/api";
-import type { Adjustments, Analysis, ViewOptions } from "../lib/types";
+import type { Adjustments, Analysis, Orientation, ViewOptions } from "../lib/types";
 import { useCurrentFrame, useStore, type Histogram } from "../state/store";
 
 interface Request {
   id: number;
   adjustments: Adjustments;
   analysis: Analysis;
+  orientation: Orientation;
   view: ViewOptions;
 }
 
@@ -44,7 +45,7 @@ export function Viewer() {
         pending.current = null;
         const t0 = performance.now();
         try {
-          const img = await renderPreview(req.id, req.adjustments, req.analysis, req.view);
+          const img = await renderPreview(req.id, req.adjustments, req.analysis, req.orientation, req.view);
           const canvas = canvasRef.current;
           if (!canvas) continue;
           if (canvas.width !== img.width || canvas.height !== img.height) {
@@ -70,10 +71,11 @@ export function Viewer() {
       id: frame.id,
       adjustments: frame.adjustments,
       analysis: frame.analysis,
+      orientation: frame.orientation,
       view: { showClipping, showNegative },
     };
     void pump();
-  }, [frame?.id, frame?.adjustments, frame?.analysis, showClipping, showNegative]);
+  }, [frame?.id, frame?.adjustments, frame?.analysis, frame?.orientation, showClipping, showNegative]);
 
   if (!frame) return <div className="viewer" />;
 

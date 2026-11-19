@@ -4,6 +4,14 @@ import { useCurrentFrame, useStore } from "../state/store";
 import { HistogramView } from "./HistogramView";
 import { Slider } from "./Slider";
 
+function Icon({ d }: { d: string }) {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+      <path d={d} />
+    </svg>
+  );
+}
+
 export function RightPanel() {
   const frame = useCurrentFrame();
   const hasClipboard = useStore((st) => st.clipboard != null);
@@ -94,6 +102,24 @@ export function RightPanel() {
         >
           Recalc <kbd>R</kbd>
         </button>
+      </section>
+
+      <section className="panel-section">
+        <h3>Transform</h3>
+        <div className="tool-row">
+          <button className="tool" disabled={disabled} onClick={() => s.rotate(-1)} title="Rotate left ( [ )">
+            <Icon d="M7.5 6.5H3.5V2.5M3.8 6.3A7 7 0 1 1 3 12" />
+          </button>
+          <button className="tool" disabled={disabled} onClick={() => s.rotate(1)} title="Rotate right ( ] )">
+            <Icon d="M16.5 6.5h4V2.5M20.2 6.3A7 7 0 1 0 21 12" />
+          </button>
+          <button className="tool" disabled={disabled} onClick={() => s.flip("horizontal")} title="Flip horizontal (H)">
+            <Icon d="M12 3v18M9 7 4 12l5 5V7ZM15 7l5 5-5 5V7Z" />
+          </button>
+          <button className="tool" disabled={disabled} onClick={() => s.flip("vertical")} title="Flip vertical (V)">
+            <Icon d="M3 12h18M7 9l5-5 5 5H7ZM7 15l5 5 5-5H7Z" />
+          </button>
+        </div>
       </section>
 
       <section className="panel-section">

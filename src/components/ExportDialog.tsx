@@ -38,7 +38,12 @@ export function ExportDialog() {
     const unlisten = await listen<ExportProgress>("export-progress", (e) => setExportProgress(e.payload));
     try {
       const summary = await exportImages(
-        targets.map((f) => ({ id: f.id, adjustments: f.adjustments, analysis: f.analysis })),
+        targets.map((f) => ({
+          id: f.id,
+          adjustments: f.adjustments,
+          analysis: f.analysis,
+          orientation: f.orientation,
+        })),
         { outDir, tiff, jpeg, jpegQuality: quality, maxSize: resize ? maxSize : null },
       );
       setResult(summary);

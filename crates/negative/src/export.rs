@@ -12,6 +12,7 @@ use tiff::encoder::{colortype, TiffEncoder};
 use crate::{
     analysis::Analysis,
     decode::decode_tiff,
+    geometry::{Orientation, Oriented},
     image::{ImageF32, RgbSource},
     pipeline::{Adjustments, Prepared},
     render::{render_rgb16, render_rgb8},
@@ -105,6 +106,7 @@ pub fn export_file(
     input: &Path,
     analysis: &Analysis,
     adjustments: &Adjustments,
+    orientation: Orientation,
     settings: &ExportSettings,
 ) -> Result<Vec<PathBuf>> {
     let raw = decode_tiff(input)?;
@@ -120,8 +122,8 @@ pub fn export_file(
     match settings.max_size.and_then(|m| resize_to(&raw, m)) {
         Some(small) => {
             drop(raw);
-            write_outputs(&small, &prep, &stem, settings)
+            write_outputs(&Oriented::new(&small, orientation), &prep, &stem, settings)
         }
-        None => write_outputs(&raw, &prep, &stem, settings),
+        None => write_outputs(&Oriented::new(&raw, orientation), &prep, &stem, settings),
     }
 }

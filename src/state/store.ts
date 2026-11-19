@@ -2,15 +2,19 @@ import { create } from "zustand";
 import * as api from "../lib/api";
 import {
   DEFAULT_ADJUSTMENTS,
+  DEFAULT_ORIENTATION,
   type Adjustments,
   type Analysis,
   type ExportProgress,
   type ImageMeta,
+  type Orientation,
   type SliderKey,
 } from "../lib/types";
 
 export interface Frame extends ImageMeta {
   adjustments: Adjustments;
+  /** Geometry, kept apart from adjustments so copy/paste and Reset leave it alone. */
+  orientation: Orientation;
   /** Analysis from import / last Recalc; Reset returns to it. */
   autoAnalysis: Analysis;
 }
@@ -43,6 +47,8 @@ interface State {
   setAdjustment: (key: SliderKey, value: number) => void;
   nudge: (key: SliderKey, delta: number) => void;
   toggleGrayscale: () => void;
+  rotate: (quarterTurnsCw: number) => void;
+  flip: (axis: "horizontal" | "vertical") => void;
   resetCurrent: () => void;
   recalcCurrent: () => Promise<void>;
   copy: () => void;
@@ -98,6 +104,7 @@ export const useStore = create<State>((set, get) => {
             const frame: Frame = {
               ...meta,
               adjustments: { ...DEFAULT_ADJUSTMENTS },
+              orientation: { ...DEFAULT_ORIENTATION },
               autoAnalysis: meta.analysis,
             };
             set((s) => ({
@@ -164,6 +171,24 @@ export const useStore = create<State>((set, get) => {
         ...f,
         adjustments: { ...f.adjustments, grayscale: !f.adjustments.grayscale },
       }));
+    },
+
+    // Display = mirror^m ∘ rotate(r). Rotating a mirrored image clockwise equals
+    // mirroring an anticlockwise rotation, and a vertical flip is mirror ∘ rotate(180°).
+    rotate(quarterTurnsCw) {
+      updateCurrent((f) => {
+        const { rotation, mirror } = f.orientation;
+        const turn = mirror ? -quarterTurnsCw : quarterTurnsCw;
+        return { ...f, orientation: { rotation: (((rotation + turn) % 4) + 4) % 4, mirror } };
+      });
+    },
+
+    flip(axis) {
+      updateCurrent((f) => {
+        const { rotation, mirror } = f.orientation;
+        const extra = axis === "vertical" ? 2 : 0;
+        return { ...f, orientation: { rotation: (rotation + extra) % 4, mirror: !mirror } };
+      });
     },
 
     resetCurrent() {

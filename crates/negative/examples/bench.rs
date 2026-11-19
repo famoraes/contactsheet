@@ -8,7 +8,7 @@ use negative::{
     analyze, decode_tiff, downsample,
     export::{export_file, ExportSettings},
     render::render_preview,
-    Adjustments, Prepared, Rect, ViewOptions,
+    Adjustments, Orientation, Prepared, Rect, ViewOptions,
 };
 
 fn main() {
@@ -39,7 +39,7 @@ fn main() {
 
     let settings = ExportSettings { out_dir, tiff16: true, jpeg_quality: Some(92), max_size: None };
     let t = Instant::now();
-    let files = export_file(&input, &an, &Adjustments::default(), &settings).expect("export");
+    let files = export_file(&input, &an, &Adjustments::default(), Orientation::default(), &settings).expect("export");
     println!("export tif+jpg    {:>7.1} ms  -> {files:?}", ms(t));
 }
 

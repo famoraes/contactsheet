@@ -5,6 +5,7 @@ import type {
   ExportOptions,
   ExportSummary,
   ImageMeta,
+  Orientation,
   Rect,
   ViewOptions,
 } from "./types";
@@ -23,9 +24,10 @@ export async function renderPreview(
   id: number,
   adjustments: Adjustments,
   analysis: Analysis,
+  orientation: Orientation,
   view: ViewOptions,
 ): Promise<PreviewFrame> {
-  const buf = await invoke<ArrayBuffer>("render_preview", { id, adjustments, analysis, view });
+  const buf = await invoke<ArrayBuffer>("render_preview", { id, adjustments, analysis, orientation, view });
   const dv = new DataView(buf);
   const width = dv.getUint32(0, true);
   const height = dv.getUint32(4, true);
@@ -36,8 +38,9 @@ export async function renderThumbnail(
   id: number,
   adjustments: Adjustments,
   analysis: Analysis,
+  orientation: Orientation,
 ): Promise<Blob> {
-  const buf = await invoke<ArrayBuffer>("render_thumbnail", { id, adjustments, analysis });
+  const buf = await invoke<ArrayBuffer>("render_thumbnail", { id, adjustments, analysis, orientation });
   return new Blob([buf], { type: "image/jpeg" });
 }
 
@@ -45,6 +48,6 @@ export const recalc = (id: number, region: Rect | null) =>
   invoke<Analysis>("recalc", { id, region });
 
 export const exportImages = (
-  items: { id: number; adjustments: Adjustments; analysis: Analysis }[],
+  items: { id: number; adjustments: Adjustments; analysis: Analysis; orientation: Orientation }[],
   options: ExportOptions,
 ) => invoke<ExportSummary>("export_images", { items, options });

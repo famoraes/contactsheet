@@ -11,7 +11,7 @@ use negative::{
     analyze, decode_tiff, downsample,
     export::{encode_jpeg, export_file, ExportSettings},
     render::{render_preview as render_preview_buf, render_rgb8},
-    Adjustments, Analysis, ImageF32, Prepared, Rect, ViewOptions,
+    Adjustments, Analysis, ImageF32, Orientation, Oriented, Prepared, Rect, RgbSource, ViewOptions,
 };
 use serde::{Deserialize, Serialize};
 use tauri::{ipc::Response, AppHandle, Emitter, State};
@@ -68,6 +68,8 @@ pub struct ExportItem {
     id: u32,
     adjustments: Adjustments,
     analysis: Analysis,
+    #[serde(default)]
+    orientation: Orientation,
 }
 
 #[derive(Deserialize)]
@@ -168,12 +170,14 @@ pub async fn render_preview(
     id: u32,
     adjustments: Adjustments,
     analysis: Analysis,
+    orientation: Orientation,
     view: ViewOptions,
 ) -> Result<Response, String> {
     let img = state.get(id)?;
     blocking(move || {
         let prep = Prepared::new(&analysis, &adjustments);
-        Ok(Response::new(render_preview_buf(&img.proxy, &prep, view)))
+        let src = Oriented::new(&img.proxy, orientation);
+        Ok(Response::new(render_preview_buf(&src, &prep, view)))
     })
     .await
 }
@@ -185,12 +189,13 @@ pub async fn render_thumbnail(
     id: u32,
     adjustments: Adjustments,
     analysis: Analysis,
+    orientation: Orientation,
 ) -> Result<Response, String> {
     let img = state.get(id)?;
     blocking(move || {
         let prep = Prepared::new(&analysis, &adjustments);
-        let t = &img.thumb;
-        let jpeg = encode_jpeg(t.width, t.height, &render_rgb8(t, &prep), 85)
+        let t = Oriented::new(&img.thumb, orientation);
+        let jpeg = encode_jpeg(t.width(), t.height(), &render_rgb8(&t, &prep), 85)
             .map_err(|e| e.to_string())?;
         Ok(Response::new(jpeg))
     })
@@ -238,7 +243,7 @@ pub async fn export_images(
         };
         for (i, (path, item)) in jobs.into_iter().enumerate() {
             let name = file_name(&path);
-            let error = match export_file(&path, &item.analysis, &item.adjustments, &settings) {
+            let error = match export_file(&path, &item.analysis, &item.adjustments, item.orientation, &settings) {
                 Ok(files) => {
                     summary
                         .written

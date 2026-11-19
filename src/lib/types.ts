@@ -17,6 +17,14 @@ export interface Analysis {
   hi: Rgb;
 }
 
+/** Quarter turns clockwise, then an optional left-right mirror (vertical flip = mirror + 180°). */
+export interface Orientation {
+  rotation: number;
+  mirror: boolean;
+}
+
+export const DEFAULT_ORIENTATION: Orientation = { rotation: 0, mirror: false };
+
 export interface Rect {
   x: number;
   y: number;

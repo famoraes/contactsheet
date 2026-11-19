@@ -31,6 +31,8 @@ export const SHORTCUT_HELP: [string, string][] = [
   ["E / D", "Saturation + / −"],
   ["1 2 · 3 4 · 5 6", "Cyan · Magenta · Yellow − / +"],
   ["⇧ + adjust key", "Step by 5 instead of 1"],
+  ["[ / ]", "Rotate left / right"],
+  ["H / V", "Flip horizontal / vertical"],
   ["G", "Color / grayscale"],
   ["R", "Recalc"],
   ["X", "Show clipping"],
@@ -106,6 +108,18 @@ export function handleKeyDown(e: KeyboardEvent, actions: { addImages: () => void
           break;
         case "g":
           s.toggleGrayscale();
+          break;
+        case "[":
+          s.rotate(-1);
+          break;
+        case "]":
+          s.rotate(1);
+          break;
+        case "h":
+          s.flip("horizontal");
+          break;
+        case "v":
+          s.flip("vertical");
           break;
         case "r":
           void s.recalcCurrent();
