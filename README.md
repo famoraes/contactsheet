@@ -1,8 +1,7 @@
 # ContactSheet
 
 Film negative → positive converter for linear film scans (TIFF) and camera
-scans (RAW / DNG), built roll by roll. The UI is modeled on Filmomat
-SmartConvert.
+scans (RAW / DNG), built roll by roll.
 
 **Stack:** Tauri 2 · Rust image core (`crates/negative`) · React + TypeScript + Vite · Zustand
 
@@ -12,7 +11,7 @@ SmartConvert.
 - **Roll workflow**: shared base correction across a roll, copy/paste settings with or without the base
 - **Crop and straighten**, **AutoCrop** (frame edge and tilt detection), rotate and flip
 - **100% zoom** with panning, before/after, clipping view, histogram, image-only mode
-- **Metadata**: film stock, date, location, archive location, keywords. Searchable and filterable, and embedded on export as XMP that Lightroom and other DAMs read
+- **Metadata**: film stock, date, location, archive location, keywords. Searchable and filterable, and embedded on export as standard XMP / IPTC metadata that photo management apps read
 - **Autosave** to a `roll.contactsheet` file next to the scans
 - **Hot folder** that converts scans as the scanner saves them
 - **Export** to 16-bit TIFF and/or JPEG with an embedded sRGB profile

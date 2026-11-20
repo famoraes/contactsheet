@@ -6,7 +6,7 @@ const STEP = 0.01;
 const BIG_STEP = 5;
 
 /**
- * Single-key adjustments, SmartConvert-style: everything reachable without the mouse.
+ * Single-key adjustments: everything reachable without the mouse.
  * Keyed by `KeyboardEvent.code` so Shift+digit still matches (e.key would be "!" etc.).
  */
 const NUDGES: Record<string, [SliderKey, number]> = {

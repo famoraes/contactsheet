@@ -56,7 +56,7 @@ or press **L**.
 
 - **Normal**: punchy, but with open shadows.
 - **Flat**: lower contrast and more shadow detail, a good base when you plan
-  to finish the image in Lightroom or similar.
+  to finish the image in another editor.
 
 The look is saved per frame and copied with settings.
 

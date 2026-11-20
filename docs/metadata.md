@@ -54,22 +54,24 @@ neutral picks, crop, rotation and metadata.
 
 ## What gets exported
 
-When **Embed metadata** is on in the [export](export.md) dialog, each file
-gets an XMP packet that Lightroom, Capture One, Bridge, Photo Mechanic,
-darktable, digiKam and Apple Photos read:
+When **Embed metadata** is on in the [export](export.md) dialog, each file gets
+standard XMP metadata (IPTC Core, Dublin Core and EXIF fields) that photo
+management apps read and can filter on:
 
-| Field | Written as | Shown in Lightroom as |
-|---|---|---|
-| Film stock, format, process | Keywords `Film › Stock › …`, `Film › Format › …`, `Film › Process › …` | Keywords |
-| Archive location | Keyword `Archive › Binder 3 › Page 12`, plus Instructions | Keywords / Instructions |
-| Roll | `photoshop:TransmissionReference` | Job |
-| Date shot | `exif:DateTimeOriginal`, `photoshop:DateCreated` | Capture date |
-| Camera, lens, ISO | `tiff:Model`, `exifEX:LensModel` / `aux:Lens`, `exif:ISOSpeedRatings` | Camera / Lens / ISO |
-| Description, place, city, country | `dc:description`, `Iptc4xmpCore:Location`, `photoshop:City` / `Country` | Caption / Sublocation / City / Country |
-| Keywords | `dc:subject`, `lr:hierarchicalSubject` | Keywords |
-| Creator, copyright | `dc:creator`, `dc:rights` | Creator / Copyright |
-| Source scan, conversion settings | `xmpMM:DerivedFrom`, `cs:Settings` | n/a |
+| Field | Exported as (standard field) |
+|---|---|
+| Film stock, format, process | Hierarchical keywords: `Film › Stock › …`, `Film › Format › …`, `Film › Process › …` |
+| Archive location | Hierarchical keyword `Archive › Binder 3 › Page 12`, plus IPTC Instructions |
+| Roll | IPTC Job Identifier |
+| Date shot | EXIF date taken and IPTC Date Created |
+| Camera, lens, ISO | EXIF camera model, lens model and ISO |
+| Description | IPTC Description (caption) |
+| Place, city, country | IPTC Sublocation, City, Country |
+| Keywords | IPTC Keywords (flat and hierarchical) |
+| Creator, copyright | IPTC Creator and Copyright Notice |
+| Source scan, conversion settings | XMP "derived from" reference, and ContactSheet's own fields |
 
 Film has no standard fields for stock or archive location, so they become
-hierarchical keywords, which every DAM can filter on. Rating, flags and titles
-are left to your DAM.
+hierarchical keywords, which photo management apps can filter on. Rating,
+flags and titles are left to those apps. The exact schema properties are listed
+in the [development notes](development.md#xmp-mapping).

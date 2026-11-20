@@ -63,7 +63,7 @@ pub struct Look {
 }
 
 impl Look {
-    /// Punchy but with open shadows (tuned on Epson V800 / SilverFast colour scans).
+    /// Punchy but with open shadows (tuned on linear flatbed colour scans).
     pub const NORMAL: Look = Look { print_range: 2.0, paper_s: 0.15 };
     /// Lower contrast, more shadow detail; a good base for further editing.
     pub const FLAT: Look = Look { print_range: 1.7, paper_s: 0.05 };

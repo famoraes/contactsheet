@@ -41,7 +41,7 @@ impl Rect {
     }
 }
 
-/// Default percentiles: clip almost nothing (SmartConvert also defaults to no clipping).
+/// Default percentiles: clip almost nothing, so no highlight or shadow detail is lost by default.
 pub const LOW_PERCENTILE: f32 = 0.0005;
 pub const HIGH_PERCENTILE: f32 = 0.9995;
 

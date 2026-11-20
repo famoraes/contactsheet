@@ -4,9 +4,9 @@
 
 - 8-bit, 16-bit or 32-bit float; RGB, RGBA, grayscale.
 - The scan should be **linear**: the scanner's raw light values, not an
-  inverted or gamma-corrected image. In SilverFast, scan in **HDR raw 48 bit**;
-  in VueScan, save a 48-bit **raw** file. Gamma-corrected scans still convert,
-  but the tones and colours are less accurate.
+  inverted or gamma-corrected image. Use your scanning software's 48-bit raw
+  or linear output mode (often labelled "raw", "linear" or "HDR"). Gamma-corrected
+  scans still convert, but the tones and colours are less accurate.
 - The TIFF orientation tag is honoured.
 - Scan with a little border around the frame or without, as you prefer:
   [AutoCrop](crop.md#autocrop) removes it, and the automatic analysis ignores

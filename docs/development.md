@@ -88,6 +88,27 @@ ones are sampled bilinearly. `src/lib/crop.ts` mirrors the Rust `Crop` /
 
 Missing fields fall back to defaults, so older files keep loading.
 
+## XMP mapping
+
+`crates/negative/src/metadata.rs` writes one XMP packet per exported file (TIFF
+tag 700, JPEG APP1). Prefixes are the standard XMP namespace prefixes.
+
+| Field | XMP properties |
+|---|---|
+| Film stock, format, process, archive, keywords | `dc:subject` (leaf terms), `lr:hierarchicalSubject` (`Film\|Stock\|…`, `Archive\|…`) |
+| Archive location (text) | `photoshop:Instructions`, `cs:ArchiveLocation` |
+| Roll | `photoshop:TransmissionReference`, `cs:RollId` |
+| Date shot | `exif:DateTimeOriginal`, `photoshop:DateCreated` |
+| Camera, lens, ISO | `tiff:Model`, `exifEX:LensModel`, `aux:Lens`, `exif:ISOSpeedRatings`, `exifEX:PhotographicSensitivity` |
+| Description | `dc:description` |
+| Place, city, country | `Iptc4xmpCore:Location`, `photoshop:City`, `photoshop:Country` |
+| Creator, copyright | `dc:creator`, `dc:rights`, `xmpRights:Marked` |
+| Provenance | `xmpMM:DerivedFrom/stRef:filePath`, `cs:SourceFile`, `cs:Settings` (JSON), `xmp:CreatorTool` |
+
+`cs:` is ContactSheet's namespace (`https://contactsheet.app/ns/1.0/`). Plain
+TIFF tags (ImageDescription, Model, Artist, Copyright) are added only for
+pure-ASCII values, so they never disagree with the XMP.
+
 ## Conventions
 
 - Issues track the roadmap. Commits that complete one end with `Closes #N`.

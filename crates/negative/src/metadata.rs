@@ -1,8 +1,8 @@
 //! Descriptive metadata embedded in exported files.
 //!
-//! Everything goes into one XMP packet (read first by Lightroom, Capture One,
-//! Bridge, Photo Mechanic, darktable, digiKam...), using the standard schemas
-//! those apps map to their filterable fields. A few plain TIFF tags are added for
+//! Everything goes into one XMP packet, which photo management apps read first,
+//! using the standard schemas (Dublin Core, IPTC Core, EXIF) that they map to
+//! their filterable fields. A few plain TIFF tags are added for
 //! readers that only look at EXIF/TIFF.
 //!
 //! Film has no standard fields for stock, format, process or archive location, so
@@ -196,8 +196,8 @@ pub fn build_xmp(m: &Metadata, prov: &Provenance) -> String {
         x.lang_alt("dc:rights", Some(c));
         x.text("xmpRights:Marked", Some("True"));
     }
-    x.text("photoshop:TransmissionReference", Some(&m.roll_id)); // Lightroom "Job"
-    x.text("Iptc4xmpCore:Location", Some(&m.location)); // Lightroom "Sublocation"
+    x.text("photoshop:TransmissionReference", Some(&m.roll_id)); // IPTC Job Identifier
+    x.text("Iptc4xmpCore:Location", Some(&m.location)); // IPTC Sublocation
     x.text("photoshop:City", Some(&m.city));
     x.text("photoshop:Country", Some(&m.country));
     let archive = archive_label(m);
