@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import * as api from "../lib/api";
+import { isScanFile } from "../lib/formats";
 import {
   aspectRatio,
   conformAspect,
@@ -191,7 +192,6 @@ export function visibleFrames(s: Pick<State, "frames" | "filter" | "currentId" |
   );
 }
 
-const TIFF_RE = /\.tiff?$/i;
 const LOAD_CONCURRENCY = 3;
 
 const clamp = (v: number) => Math.max(-1, Math.min(1, Math.round(v * 100) / 100));
@@ -280,10 +280,10 @@ export const useStore = create<State>((set, get) => {
 
     async loadPaths(paths) {
       const known = new Set(get().frames.map((f) => f.path));
-      const queue = paths.filter((p) => TIFF_RE.test(p) && !known.has(p));
+      const queue = paths.filter((p) => isScanFile(p) && !known.has(p));
       const skipped = paths.length - queue.length;
       if (skipped > 0 && queue.length === 0) {
-        set((s) => ({ errors: [...s.errors, "Only new .tif/.tiff files can be added."] }));
+        set((s) => ({ errors: [...s.errors, "Only new TIFF, DNG or camera RAW files can be added."] }));
         return;
       }
       set((s) => ({ pendingLoads: s.pendingLoads + queue.length }));

@@ -1,6 +1,6 @@
 # ContactSheet
 
-Film negative → positive converter for raw scans (TIFF for now). The UI is modeled on Filmomat SmartConvert.
+Film negative → positive converter for raw scans: TIFF from a film scanner, or camera RAW / DNG from camera scanning. The UI is modeled on Filmomat SmartConvert.
 
 **Stack:** Tauri 2 · Rust image core (`crates/negative`) · React + TypeScript + Vite · Zustand
 
@@ -52,3 +52,9 @@ Preview: Rust renders a 2000 px proxy and sends RGBA bytes to the canvas. Only t
   | Description, place, city, country | `dc:description`, `Iptc4xmpCore:Location`, `photoshop:City/Country` | Caption / Location |
   | Creator, copyright | `dc:creator`, `dc:rights` | Creator / Copyright |
   | Source scan, conversion settings | `xmpMM:DerivedFrom`, `cs:Settings` | - |
+
+## RAW / DNG input and licensing
+
+Camera RAW and DNG files are decoded with [rawler](https://github.com/dnglab/dnglab) (LGPL-2.1) and taken only to linear camera RGB (levels, demosaic, active area). The negative inversion's per-channel normalization makes white balance and the camera matrix unnecessary. RAW support is the `raw` cargo feature of `crates/negative` (on by default). Build with `--no-default-features` to leave it out.
+
+Because rawler is LGPL and Rust links it statically, distributing app binaries means meeting the LGPL relinking terms. Publishing the app's source satisfies this, as would replacing the decoder. Decide this before packaging.

@@ -48,13 +48,12 @@ struct HotError {
     message: String,
 }
 
-/// Scans the hot folder should pick up: TIFFs that aren't hidden or our own exports.
+/// Scans the hot folder should pick up: TIFF, DNG or camera RAW files that aren't
+/// hidden or our own exports.
 fn is_candidate(path: &Path) -> bool {
     let name = path.file_name().map(|n| n.to_string_lossy().to_lowercase()).unwrap_or_default();
-    !name.starts_with('.')
-        && (name.ends_with(".tif") || name.ends_with(".tiff"))
-        && !name.ends_with("_positive.tif")
-        && !name.ends_with("_positive.tiff")
+    let scan = name.ends_with(".tif") || name.ends_with(".tiff") || negative::raw::is_raw(path);
+    !name.starts_with('.') && scan && !name.ends_with("_positive.tif") && !name.ends_with("_positive.tiff")
 }
 
 fn list(dir: &Path) -> std::io::Result<Vec<(PathBuf, u64, SystemTime)>> {
@@ -192,7 +191,7 @@ mod tests {
 
     #[test]
     fn candidates() {
-        for ok in ["/s/a.tif", "/s/B.TIFF", "/s/roll 1.tif"] {
+        for ok in ["/s/a.tif", "/s/B.TIFF", "/s/roll 1.tif", "/s/DSC_0001.NEF", "/s/scan.dng"] {
             assert!(is_candidate(Path::new(ok)), "{ok}");
         }
         for no in ["/s/.a.tif", "/s/a.jpg", "/s/a_positive.tif", "/s/a.tif.part", "/s/roll.contactsheet"] {

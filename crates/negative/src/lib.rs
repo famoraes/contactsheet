@@ -28,11 +28,12 @@ pub mod image;
 pub mod metadata;
 pub mod neutral;
 pub mod pipeline;
+pub mod raw;
 pub mod render;
 pub mod synth;
 
 pub use analysis::{analyze, analyze_many, Analysis, Rect};
-pub use decode::{decode_tiff, RawImage};
+pub use decode::{decode_image, decode_tiff, RawImage};
 pub use error::{Error, Result};
 pub use geometry::{Crop, Framed, Orientation, Oriented};
 pub use image::{downsample, ImageF32, RgbSource, Window};

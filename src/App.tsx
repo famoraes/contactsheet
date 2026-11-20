@@ -9,6 +9,7 @@ import { Filmstrip } from "./components/Filmstrip";
 import { RightPanel } from "./components/RightPanel";
 import { Toolbar } from "./components/Toolbar";
 import { Viewer } from "./components/Viewer";
+import { SCAN_EXTENSIONS } from "./lib/formats";
 import { flushSaves } from "./lib/roll";
 import { handleKeyDown } from "./lib/shortcuts";
 import { useStore } from "./state/store";
@@ -27,7 +28,9 @@ export default function App() {
       multiple: true,
       directory: false,
       title: "Add negative scans",
-      filters: [{ name: "TIFF scans", extensions: ["tif", "tiff", "TIF", "TIFF"] }],
+      filters: [
+        { name: "Scans (TIFF, DNG, RAW)", extensions: [...SCAN_EXTENSIONS, ...SCAN_EXTENSIONS.map((e) => e.toUpperCase())] },
+      ],
     });
     if (Array.isArray(picked) && picked.length) void loadPaths(picked);
   }, [loadPaths]);
@@ -88,7 +91,7 @@ export default function App() {
             <div className="empty" onClick={addImages}>
               <div className="empty-frame">
                 <div className="empty-title">Drop negative scans here</div>
-                <div className="empty-sub">16-bit or 8-bit TIFF · color or B&amp;W · or click to browse</div>
+                <div className="empty-sub">TIFF scans or camera RAW / DNG · color or B&amp;W · or click to browse</div>
               </div>
             </div>
           )}

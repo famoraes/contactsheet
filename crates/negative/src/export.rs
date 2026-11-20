@@ -16,7 +16,7 @@ use tiff::{
 
 use crate::{
     analysis::Analysis,
-    decode::decode_tiff,
+    decode::decode_image,
     geometry::{Crop, Framed, Orientation},
     image::{ImageF32, RgbSource},
     metadata::{jpeg_with_xmp, Embed, SOFTWARE},
@@ -162,7 +162,7 @@ pub fn export_file(
     settings: &ExportSettings,
     embed: Option<&Embed>,
 ) -> Result<Vec<PathBuf>> {
-    let raw = decode_tiff(input)?;
+    let raw = decode_image(input)?;
     let prep = Prepared::new(analysis, adjustments);
     let stem = format!(
         "{}_positive",

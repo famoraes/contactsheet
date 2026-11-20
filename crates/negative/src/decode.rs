@@ -27,6 +27,15 @@ pub struct RawImage {
     pub orientation: Orientation,
 }
 
+/// Decode a scan: TIFF, or camera RAW / DNG by file extension.
+pub fn decode_image(path: &Path) -> Result<RawImage> {
+    if crate::raw::is_raw(path) {
+        crate::raw::decode_raw(path)
+    } else {
+        decode_tiff(path)
+    }
+}
+
 pub fn decode_tiff(path: &Path) -> Result<RawImage> {
     let file = File::open(path)?;
     let mut dec = Decoder::new(BufReader::new(file))?.with_limits(Limits::unlimited());

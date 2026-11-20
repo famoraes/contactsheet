@@ -9,3 +9,9 @@ tiff = "0.9"
 image = { version = "0.25", default-features = false, features = ["jpeg"] }
 rayon = "1.10"
 serde = { version = "1", features = ["derive"] }
+# Camera RAW / DNG input. LGPL-2.1: see README before distributing binaries.
+rawler = { version = "0.8", optional = true }
+
+[features]
+default = ["raw"]
+raw = ["dep:rawler"]

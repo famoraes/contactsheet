@@ -8,7 +8,7 @@ use std::{
 };
 
 use negative::{
-    analyze, analyze_many, autocrop::auto_crop as detect_crop, decode_tiff, downsample,
+    analyze, analyze_many, autocrop::auto_crop as detect_crop, decode_image, downsample,
     export::{encode_jpeg, export_file, ExportSettings},
     metadata::{embed, Metadata, Provenance},
     neutral::{neutralize as neutralize_analysis, sample_density},
@@ -71,7 +71,7 @@ impl AppState {
             }
         }
         let path = self.get(id)?.path.clone();
-        let raw = Arc::new(decode_tiff(&path).map_err(|e| format!("{}: {e}", file_name(&path)))?);
+        let raw = Arc::new(decode_image(&path).map_err(|e| format!("{}: {e}", file_name(&path)))?);
         let mut cache = lock()?;
         cache.retain(|(k, _)| *k != id);
         cache.push((id, raw.clone()));
@@ -163,7 +163,7 @@ pub async fn add_image(
     let st = state.inner().clone();
     blocking(move || {
         let path = PathBuf::from(path);
-        let raw = decode_tiff(&path).map_err(|e| format!("{}: {e}", file_name(&path)))?;
+        let raw = decode_image(&path).map_err(|e| format!("{}: {e}", file_name(&path)))?;
         // Stored (unrotated) size; the UI derives display size from the orientation.
         let (width, height, bit_depth, orientation) =
             (raw.width, raw.height, raw.bit_depth, raw.orientation);

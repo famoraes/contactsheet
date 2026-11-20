@@ -19,7 +19,7 @@ export function HotFolderDialog() {
       <div className="modal" onMouseDown={(e) => e.stopPropagation()}>
         <h2>Hot folder</h2>
         <p className="panel-hint">
-          New TIFFs saved to this folder are added as soon as the scanner finishes writing them, and shown right away.
+          New scans (TIFF, DNG or camera RAW) saved to this folder are added as soon as the scanner finishes writing them, and shown right away.
           Files already in the folder are left alone.
         </p>
 
