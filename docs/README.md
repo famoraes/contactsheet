@@ -20,3 +20,4 @@ convert, crop, describe, export.
 ## For contributors
 
 - [Development](development.md): architecture, the inversion maths, tests
+- [Releasing](releasing.md): automated builds, signing, installing unsigned builds

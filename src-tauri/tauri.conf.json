@@ -35,6 +35,22 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "publisher": "The ContactSheet Authors",
+    "copyright": "Copyright 2026 The ContactSheet Authors. Licensed under the Apache License 2.0.",
+    "category": "Photography",
+    "shortDescription": "Film negative to positive converter",
+    "longDescription": "Converts linear film scans (TIFF) and camera scans (RAW/DNG) of negatives into positives, roll by roll: automatic conversion, crop and AutoCrop, metadata, hot folder and export.",
+    "license": "Apache-2.0",
+    "resources": {
+      "../LICENSE": "LICENSE",
+      "../NOTICE": "NOTICE",
+      "../THIRD_PARTY_LICENSES.md": "THIRD_PARTY_LICENSES.md",
+      "../licenses/LGPL-2.1.txt": "licenses/LGPL-2.1.txt"
+    },
+    "macOS": {
+      "signingIdentity": "-",
+      "minimumSystemVersion": "11.0"
+    }
   }
 }

@@ -111,6 +111,8 @@ pure-ASCII values, so they never disagree with the XMP.
 
 ## Conventions
 
+- Releases are built by GitHub Actions when a release is published; see
+  [Releasing](releasing.md).
 - Issues track the roadmap. Commits that complete one end with `Closes #N`.
 - Update the matching page in `docs/` in the same change as a feature.
 - Licence: Apache-2.0. New dependencies should be permissively licensed, or

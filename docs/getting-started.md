@@ -2,7 +2,14 @@
 
 ## Install
 
-There are no packaged releases yet; run ContactSheet from source.
+Download the installer for your system from the
+[Releases page](https://github.com/famoraes/contactsheet/releases): a `.dmg`
+for macOS (Apple Silicon or Intel), `.exe` / `.msi` for Windows, or
+`.AppImage` / `.deb` / `.rpm` for Linux. Builds are not code-signed yet, so the
+first launch needs one extra step; see
+[installing an unsigned build](releasing.md#installing-an-unsigned-build).
+
+### From source
 
 Requirements: [Node.js 22](https://nodejs.org) (the repo's `.nvmrc` pins it for
 [nvm](https://github.com/nvm-sh/nvm)) and a stable [Rust](https://rustup.rs)

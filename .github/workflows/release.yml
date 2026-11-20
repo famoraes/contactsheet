@@ -1,0 +1,125 @@
+# Builds the desktop app for macOS, Windows and Linux.
+#
+# - Publishing a GitHub release (tag like v0.2.0) builds every platform and
+#   attaches the installers to that release. The version comes from the tag.
+# - "Run workflow" (workflow_dispatch) does a test build; installers are kept as
+#   workflow artifacts instead of being attached to a release.
+#
+# macOS builds are signed and notarized when the APPLE_* secrets exist
+# (see docs/releasing.md); otherwise they are ad-hoc signed.
+name: Release
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build ${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS (Apple Silicon)
+            os: macos-latest
+            target: aarch64-apple-darwin
+          - name: macOS (Intel)
+            os: macos-latest
+            target: x86_64-apple-darwin
+          - name: Windows
+            os: windows-latest
+            target: x86_64-pc-windows-msvc
+          - name: Linux
+            os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+    runs-on: ${{ matrix.os }}
+    env:
+      HAS_APPLE_CERT: ${{ secrets.APPLE_CERTIFICATE != '' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - run: npm ci
+
+      - name: Set version from the release tag
+        if: github.event_name == 'release'
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          # Windows installers only accept numeric versions (optionally -N).
+          if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9]+)?$ ]]; then
+            echo "::error::Release tag '$GITHUB_REF_NAME' must look like v1.2.3 or v1.2.3-4"
+            exit 1
+          fi
+          node -e '
+            const fs = require("fs");
+            for (const f of ["src-tauri/tauri.conf.json", "package.json"]) {
+              const j = JSON.parse(fs.readFileSync(f, "utf8"));
+              j.version = process.argv[1];
+              fs.writeFileSync(f, JSON.stringify(j, null, 2) + "\n");
+            }' "$version"
+          echo "Building version $version"
+
+      - name: Build (macOS, signed and notarized)
+        if: runner.os == 'macOS' && env.HAS_APPLE_CERT == 'true'
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        with:
+          releaseId: ${{ github.event.release.id }}
+          args: --target ${{ matrix.target }}
+
+      - name: Build
+        if: runner.os != 'macOS' || env.HAS_APPLE_CERT != 'true'
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          releaseId: ${{ github.event.release.id }}
+          args: --target ${{ matrix.target }}
+
+      - name: Keep installers (test builds)
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ContactSheet-${{ matrix.target }}
+          path: |
+            target/${{ matrix.target }}/release/bundle/dmg/*.dmg
+            target/${{ matrix.target }}/release/bundle/nsis/*.exe
+            target/${{ matrix.target }}/release/bundle/msi/*.msi
+            target/${{ matrix.target }}/release/bundle/appimage/*.AppImage
+            target/${{ matrix.target }}/release/bundle/deb/*.deb
+            target/${{ matrix.target }}/release/bundle/rpm/*.rpm
+          if-no-files-found: warn
