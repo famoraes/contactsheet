@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { baseOf } from "../lib/roll";
 import { useStore, useVisibleFrames } from "../state/store";
 
 export function Toolbar({ onAddImages }: { onAddImages: () => void }) {
@@ -7,7 +8,8 @@ export function Toolbar({ onAddImages }: { onAddImages: () => void }) {
   const showClipping = useStore((s) => s.showClipping);
   const showBefore = useStore((s) => s.showBefore);
   const progress = useStore((s) => s.exportProgress);
-  const { go, goTo, toggleClipping, toggleBefore, setExportOpen } = useStore.getState();
+  const hotFolder = useStore((s) => s.hotFolder);
+  const { go, goTo, toggleClipping, toggleBefore, setExportOpen, setHotOpen } = useStore.getState();
   const [editing, setEditing] = useState(false);
 
   const index = frames.findIndex((f) => f.id === currentId);
@@ -19,6 +21,13 @@ export function Toolbar({ onAddImages }: { onAddImages: () => void }) {
         <span className="brand">ContactSheet</span>
         <button className="btn btn-primary" onClick={onAddImages} title="Add TIFF scans (⌘O)">
           + Add Images
+        </button>
+        <button
+          className={`btn btn-toggle${hotFolder ? " is-on" : ""}`}
+          onClick={() => setHotOpen(true)}
+          title={hotFolder ? `Watching ${hotFolder}` : "Watch a folder for new scans"}
+        >
+          {hotFolder ? <>● {baseOf(hotFolder)}</> : "Hot folder"}
         </button>
       </div>
 

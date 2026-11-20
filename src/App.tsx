@@ -1,8 +1,10 @@
+import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useCallback, useEffect, useState } from "react";
 import { ExportDialog } from "./components/ExportDialog";
+import { HotFolderDialog } from "./components/HotFolderDialog";
 import { Filmstrip } from "./components/Filmstrip";
 import { RightPanel } from "./components/RightPanel";
 import { Toolbar } from "./components/Toolbar";
@@ -16,6 +18,7 @@ export default function App() {
   const exportOpen = useStore((s) => s.exportOpen);
   const errors = useStore((s) => s.errors);
   const panelsHidden = useStore((s) => s.panelsHidden);
+  const hotOpen = useStore((s) => s.hotOpen);
   const { loadPaths, dismissErrors } = useStore.getState();
   const [dragging, setDragging] = useState(false);
 
@@ -34,6 +37,20 @@ export default function App() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [addImages]);
+
+  // Hot folder: new scans arrive one at a time, in order.
+  useEffect(() => {
+    let queue = Promise.resolve();
+    const subs = [
+      listen<{ path: string }>("hot-folder", (e) => {
+        queue = queue.then(() => useStore.getState().receiveHotFile(e.payload.path));
+      }),
+      listen<{ message: string }>("hot-folder-error", (e) =>
+        useStore.setState((s) => ({ errors: [...s.errors, `Hot folder: ${e.payload.message}`] })),
+      ),
+    ];
+    return () => subs.forEach((p) => void p.then((fn) => fn()));
+  }, []);
 
   // Write pending roll-file changes before the window goes away.
   useEffect(() => {
@@ -85,6 +102,7 @@ export default function App() {
       </main>
       <Filmstrip />
       {exportOpen && <ExportDialog />}
+      {hotOpen && <HotFolderDialog />}
       {errors.length > 0 && (
         <div className="toast" onClick={dismissErrors} title="Click to dismiss">
           {errors.slice(-3).map((e, i) => (

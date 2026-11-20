@@ -84,6 +84,13 @@ interface State {
   panelTab: "adjust" | "info";
   /** Tab: hide toolbar, panel and filmstrip to show only the image. */
   panelsHidden: boolean;
+  /** Folder watched for new scans, or null. */
+  hotFolder: string | null;
+  /** New hot-folder scans get the current frame's settings (and shared base). */
+  hotApplySettings: boolean;
+  /** New hot-folder scans are AutoCropped. */
+  hotAutoCrop: boolean;
+  hotOpen: boolean;
   /** 100% zoom: the frame point (normalized 0..1) at the centre of the view; null = fit. */
   zoomCenter: [number, number] | null;
   /** Names of the physical archive levels, e.g. Binder / Page / Strip. */
@@ -132,6 +139,12 @@ interface State {
   setPanelTab: (tab: "adjust" | "info") => void;
   togglePanels: (hidden?: boolean) => void;
   setZoom: (center: [number, number] | null) => void;
+  setHotOpen: (open: boolean) => void;
+  setHotOptions: (o: { applySettings?: boolean; autoCrop?: boolean }) => void;
+  startHotFolder: (dir: string) => Promise<void>;
+  stopHotFolder: () => Promise<void>;
+  /** A new scan arrived in the hot folder. */
+  receiveHotFile: (path: string) => Promise<void>;
   toggleZoom: () => void;
   /** Set metadata fields on every selected frame. */
   setMeta: (patch: Partial<Pick<FrameMeta, MetaKey>>) => void;
@@ -144,13 +157,21 @@ interface State {
 
 interface Prefs {
   archiveLevels: string[];
+  hotApplySettings: boolean;
+  hotAutoCrop: boolean;
   /** Pre-filled on frames that have no saved metadata. */
   creator: string;
   copyright: string;
 }
 
 const PREFS_KEY = "contactsheet.prefs";
-const DEFAULT_PREFS: Prefs = { archiveLevels: DEFAULT_ARCHIVE_LEVELS, creator: "", copyright: "" };
+const DEFAULT_PREFS: Prefs = {
+  archiveLevels: DEFAULT_ARCHIVE_LEVELS,
+  hotApplySettings: true,
+  hotAutoCrop: false,
+  creator: "",
+  copyright: "",
+};
 
 function loadPrefs(): Prefs {
   try {
@@ -250,6 +271,10 @@ export const useStore = create<State>((set, get) => {
     panelTab: "adjust",
     panelsHidden: false,
     zoomCenter: null,
+    hotFolder: null,
+    hotApplySettings: loadPrefs().hotApplySettings,
+    hotAutoCrop: loadPrefs().hotAutoCrop,
+    hotOpen: false,
     archiveLevels: loadPrefs().archiveLevels,
     filter: EMPTY_FILTER,
 
@@ -601,6 +626,59 @@ export const useStore = create<State>((set, get) => {
     setPanelTab: (panelTab) => set({ panelTab }),
     togglePanels: (hidden) => set((s) => ({ panelsHidden: hidden ?? !s.panelsHidden })),
     setZoom: (zoomCenter) => set({ zoomCenter }),
+    setHotOpen: (hotOpen) => set({ hotOpen }),
+
+    setHotOptions({ applySettings, autoCrop }) {
+      const p: Partial<Prefs> = {};
+      if (applySettings !== undefined) p.hotApplySettings = applySettings;
+      if (autoCrop !== undefined) p.hotAutoCrop = autoCrop;
+      savePrefs(p);
+      set({ hotApplySettings: applySettings ?? get().hotApplySettings, hotAutoCrop: autoCrop ?? get().hotAutoCrop });
+    },
+
+    async startHotFolder(dir) {
+      try {
+        await api.watchFolder(dir);
+        set({ hotFolder: dir });
+      } catch (e) {
+        fail(e);
+      }
+    },
+
+    async stopHotFolder() {
+      await api.watchFolder(null).catch(fail);
+      set({ hotFolder: null });
+    },
+
+    async receiveHotFile(path) {
+      // The frame on screen when the scan arrives is the template for the roll.
+      const template = current();
+      await get().loadPaths([path]);
+      const f = get().frames.find((x) => x.path === path);
+      if (!f) return;
+      const { hotApplySettings, hotAutoCrop } = get();
+      if (hotApplySettings && template) {
+        updateFrame(f.id, (x) => ({
+          ...x,
+          adjustments: { ...template.adjustments },
+          ...(template.sharedBase
+            ? { analysis: template.analysis, autoAnalysis: template.autoAnalysis, sharedBase: true }
+            : {}),
+        }));
+      }
+      get().select(f.id);
+      if (hotAutoCrop) {
+        try {
+          const found = await api.autoCrop(f.id, f.orientation);
+          if (found) {
+            updateFrame(f.id, (x) => ({ ...x, crop: fitCrop(found, displaySize(x)) }));
+            await recalcAfterCrop(f.id);
+          }
+        } catch (e) {
+          fail(e);
+        }
+      }
+    },
     toggleZoom: () => {
       if (get().cropMode) return;
       set((s) => ({ zoomCenter: s.zoomCenter ? null : [0.5, 0.5] }));

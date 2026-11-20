@@ -67,6 +67,10 @@ export function handleKeyDown(e: KeyboardEvent, actions: { addImages: () => void
     if (e.key === "Escape") s.setExportOpen(false);
     return;
   }
+  if (s.hotOpen) {
+    if (e.key === "Escape") s.setHotOpen(false);
+    return;
+  }
   if (s.cropMode && (e.key === "Escape" || e.key === "Enter")) {
     e.preventDefault();
     if (e.key === "Escape") s.cancelCrop();

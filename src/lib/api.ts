@@ -108,6 +108,9 @@ export const exportImages = (
   options: ExportOptions,
 ) => invoke<ExportSummary>("export_images", { items, options });
 
+/** Watch `dir` for new scans (events "hot-folder" / "hot-folder-error"); null stops. */
+export const watchFolder = (dir: string | null) => invoke<void>("watch_folder", { dir });
+
 /** Contents (JSON) of the roll file in `dir`, or null when there is none. */
 export const readRoll = (dir: string) => invoke<string | null>("read_roll", { dir });
 

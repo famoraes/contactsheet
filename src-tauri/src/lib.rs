@@ -1,4 +1,5 @@
 mod commands;
+mod hotfolder;
 
 use commands::AppState;
 
@@ -7,6 +8,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .manage(AppState::default())
+        .manage(hotfolder::HotFolderState::default())
         .invoke_handler(tauri::generate_handler![
             commands::add_image,
             commands::remove_images,
@@ -20,6 +22,7 @@ pub fn run() {
             commands::export_images,
             commands::read_roll,
             commands::write_roll,
+            hotfolder::watch_folder,
         ])
         .run(tauri::generate_context!())
         .expect("error while running ContactSheet");
