@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type MouseEvent } from "react";
 import { renderPreview, type PreviewFrame } from "../lib/api";
 import { aspectRatio, cropPixels, FULL_CROP, MAX_ANGLE } from "../lib/crop";
-import type { Adjustments, Analysis, Crop, Orientation, ViewOptions } from "../lib/types";
+import { DEFAULT_ADJUSTMENTS, type Adjustments, type Analysis, type Crop, type Orientation, type ViewOptions } from "../lib/types";
 import { displaySize, useCurrentFrame, useStore, type Histogram } from "../state/store";
 import { CropOverlay } from "./CropOverlay";
 
@@ -12,6 +12,8 @@ interface Request {
   orientation: Orientation;
   crop: Crop | null;
   view: ViewOptions;
+  /** Rendering the "before" state; it must not replace the histogram. */
+  before: boolean;
 }
 
 interface Size {
@@ -35,6 +37,7 @@ export function Viewer() {
   const frame = useCurrentFrame();
   const showClipping = useStore((s) => s.showClipping);
   const showNegative = useStore((s) => s.showNegative);
+  const showBefore = useStore((s) => s.showBefore);
   const neutralMode = useStore((s) => s.neutralMode);
   const cropMode = useStore((s) => s.cropMode);
   const cropAspect = useStore((s) => s.cropAspect);
@@ -79,7 +82,7 @@ export function Viewer() {
           }
           canvas.getContext("2d")!.putImageData(new ImageData(out.pixels, out.width, out.height), 0, 0);
           setImg((old) => (old?.w === out.width && old?.h === out.height ? old : { w: out.width, h: out.height }));
-          if (!req.view.showNegative && !req.view.showClipping) setHistogram(computeHistogram(out));
+          if (!req.before && !req.view.showNegative && !req.view.showClipping) setHistogram(computeHistogram(out));
           setRenderMs(performance.now() - t0);
           setError(null);
         } catch (e) {
@@ -94,18 +97,34 @@ export function Viewer() {
   // While cropping, show the whole frame (straightened via CSS) under the crop box.
   const renderCrop = cropMode ? null : (frame?.crop ?? null);
 
+  // "Before" is the automatic conversion with no corrections: auto analysis (no
+  // neutral picks) and default sliders. Geometry and the color/grayscale mode stay,
+  // so the comparison lines up and only the corrections toggle.
+  const before = showBefore && !showNegative && !cropMode;
+
   useEffect(() => {
     if (!frame) return;
     pending.current = {
       id: frame.id,
-      adjustments: frame.adjustments,
-      analysis: frame.analysis,
+      adjustments: before ? { ...DEFAULT_ADJUSTMENTS, grayscale: frame.adjustments.grayscale } : frame.adjustments,
+      analysis: before ? frame.autoAnalysis : frame.analysis,
       orientation: frame.orientation,
       crop: renderCrop,
       view: { showClipping, showNegative },
+      before,
     };
     void pump();
-  }, [frame?.id, frame?.adjustments, frame?.analysis, frame?.orientation, renderCrop, showClipping, showNegative]);
+  }, [
+    frame?.id,
+    frame?.adjustments,
+    frame?.analysis,
+    frame?.autoAnalysis,
+    frame?.orientation,
+    renderCrop,
+    showClipping,
+    showNegative,
+    before,
+  ]);
 
   // Fit the image into the available box (like object-fit: contain), but with an
   // explicit size so clicks and overlays map 1:1 onto image coordinates.
@@ -152,7 +171,8 @@ export function Viewer() {
             Neutral picker: click a gray · ⇧-click a second gray in another tone · Esc to exit
           </span>
         )}
-        {showNegative && <span className="badge badge-accent">Before</span>}
+        {before && <span className="badge badge-accent">Before · auto conversion</span>}
+        {showNegative && <span className="badge badge-accent">Negative</span>}
         {showClipping && (
           <span className="badge">
             Clipping <i className="swatch swatch-hi" /> highlights <i className="swatch swatch-lo" /> shadows

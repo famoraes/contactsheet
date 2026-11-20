@@ -12,14 +12,20 @@ import {
   sameCrop,
   type Size,
 } from "../lib/crop";
+import { useShallow } from "zustand/react/shallow";
+import { DEFAULT_ARCHIVE_LEVELS, EMPTY_FILTER, isFilterActive, matchesFilter, type FrameFilter } from "../lib/meta";
+import { markLoaded, pickSaved, savedFrame, scheduleSave, setRollErrorHandler } from "../lib/roll";
 import {
   DEFAULT_ADJUSTMENTS,
   DEFAULT_ORIENTATION,
+  EMPTY_META,
   type Adjustments,
   type Analysis,
   type Crop,
   type ExportProgress,
+  type FrameMeta,
   type ImageMeta,
+  type MetaKey,
   type Orientation,
   type SliderKey,
 } from "../lib/types";
@@ -34,6 +40,8 @@ export interface Frame extends ImageMeta {
   neutralPoints: [number, number][];
   /** Analysis from import / last Recalc; Reset returns to it. */
   autoAnalysis: Analysis;
+  /** Descriptive metadata (film stock, dates, archive location...). */
+  meta: FrameMeta;
 }
 
 export interface Histogram {
@@ -49,6 +57,9 @@ interface State {
   anchorId: number | null;
   clipboard: Adjustments | null;
   showClipping: boolean;
+  /** Show the untouched auto conversion (B). */
+  showBefore: boolean;
+  /** Show the raw negative (⇧B). */
   showNegative: boolean;
   neutralMode: boolean;
   cropMode: boolean;
@@ -61,6 +72,12 @@ interface State {
   histogram: Histogram | null;
   exportOpen: boolean;
   exportProgress: ExportProgress | null;
+  panelTab: "adjust" | "info";
+  /** Tab: hide toolbar, panel and filmstrip to show only the image. */
+  panelsHidden: boolean;
+  /** Names of the physical archive levels, e.g. Binder / Page / Strip. */
+  archiveLevels: string[];
+  filter: FrameFilter;
 
   loadPaths: (paths: string[]) => Promise<void>;
   select: (id: number, mods?: { shift?: boolean; toggle?: boolean }) => void;
@@ -87,11 +104,49 @@ interface State {
   paste: () => void;
   removeSelection: () => Promise<void>;
   toggleClipping: () => void;
+  toggleBefore: () => void;
   toggleNegative: () => void;
   setHistogram: (h: Histogram | null) => void;
   setExportOpen: (open: boolean) => void;
   setExportProgress: (p: ExportProgress | null) => void;
   dismissErrors: () => void;
+  setPanelTab: (tab: "adjust" | "info") => void;
+  togglePanels: (hidden?: boolean) => void;
+  /** Set metadata fields on every selected frame. */
+  setMeta: (patch: Partial<Pick<FrameMeta, MetaKey>>) => void;
+  setArchiveValue: (level: number, value: string) => void;
+  setArchiveLevels: (names: string[]) => void;
+  setFilter: (filter: FrameFilter) => void;
+}
+
+// ---- Preferences (app-wide, not per roll) -----------------------------------
+
+interface Prefs {
+  archiveLevels: string[];
+  /** Pre-filled on frames that have no saved metadata. */
+  creator: string;
+  copyright: string;
+}
+
+const PREFS_KEY = "contactsheet.prefs";
+const DEFAULT_PREFS: Prefs = { archiveLevels: DEFAULT_ARCHIVE_LEVELS, creator: "", copyright: "" };
+
+function loadPrefs(): Prefs {
+  try {
+    return { ...DEFAULT_PREFS, ...JSON.parse(localStorage.getItem(PREFS_KEY) ?? "{}") };
+  } catch {
+    return DEFAULT_PREFS;
+  }
+}
+
+const savePrefs = (p: Partial<Prefs>) => localStorage.setItem(PREFS_KEY, JSON.stringify({ ...loadPrefs(), ...p }));
+
+/** Frames shown in the filmstrip: those matching the filter, plus the current one. */
+export function visibleFrames(s: Pick<State, "frames" | "filter" | "currentId" | "archiveLevels">): Frame[] {
+  if (!isFilterActive(s.filter)) return s.frames;
+  return s.frames.filter(
+    (f) => f.id === s.currentId || matchesFilter(f.name, f.meta, s.filter, s.archiveLevels),
+  );
 }
 
 const TIFF_RE = /\.tiff?$/i;
@@ -114,6 +169,19 @@ export const useStore = create<State>((set, get) => {
   };
 
   const fail = (e: unknown) => set((s) => ({ errors: [...s.errors, String(e)] }));
+
+  const visible = () => visibleFrames(get());
+
+  /** Frames that metadata edits and paste apply to. */
+  const targets = () => {
+    const { selection, currentId } = get();
+    return new Set(selection.length ? selection : currentId != null ? [currentId] : []);
+  };
+
+  const updateTargets = (fn: (f: Frame) => Frame) => {
+    const ids = targets();
+    set((s) => ({ frames: s.frames.map((f) => (ids.has(f.id) ? fn(f) : f)) }));
+  };
 
   /** Re-analyse a frame from its current crop; drops neutral picks (they were relative to the old analysis). */
   const recalcFrame = async (id: number) => {
@@ -139,6 +207,7 @@ export const useStore = create<State>((set, get) => {
     anchorId: null,
     clipboard: null,
     showClipping: false,
+    showBefore: false,
     showNegative: false,
     neutralMode: false,
     cropMode: false,
@@ -150,6 +219,10 @@ export const useStore = create<State>((set, get) => {
     histogram: null,
     exportOpen: false,
     exportProgress: null,
+    panelTab: "adjust",
+    panelsHidden: false,
+    archiveLevels: loadPrefs().archiveLevels,
+    filter: EMPTY_FILTER,
 
     async loadPaths(paths) {
       const known = new Set(get().frames.map((f) => f.path));
@@ -163,7 +236,8 @@ export const useStore = create<State>((set, get) => {
       const worker = async () => {
         for (let p = queue.shift(); p !== undefined; p = queue.shift()) {
           try {
-            const meta = await api.addImage(p);
+            const [meta, saved] = await Promise.all([api.addImage(p), savedFrame(p).catch(() => null)]);
+            const prefs = loadPrefs();
             const frame: Frame = {
               ...meta,
               adjustments: { ...DEFAULT_ADJUSTMENTS },
@@ -171,7 +245,11 @@ export const useStore = create<State>((set, get) => {
               crop: null,
               neutralPoints: [],
               autoAnalysis: meta.analysis,
+              meta: { ...EMPTY_META, creator: prefs.creator, copyright: prefs.copyright },
+              // Edits and metadata from the folder's roll file win.
+              ...(saved ?? {}),
             };
+            markLoaded(frame.id, frame);
             set((s) => ({
               frames: [...s.frames, frame],
               currentId: s.currentId ?? frame.id,
@@ -190,7 +268,8 @@ export const useStore = create<State>((set, get) => {
 
     select(id, mods = {}) {
       if (id !== get().currentId) leaveModes();
-      const { frames, selection, anchorId } = get();
+      const { selection, anchorId } = get();
+      const frames = visible();
       if (mods.shift && anchorId != null) {
         const a = frames.findIndex((f) => f.id === anchorId);
         const b = frames.findIndex((f) => f.id === id);
@@ -206,18 +285,20 @@ export const useStore = create<State>((set, get) => {
     },
 
     selectAll() {
-      set((s) => ({ selection: s.frames.map((f) => f.id) }));
+      set({ selection: visible().map((f) => f.id) });
     },
 
     go(delta) {
-      const { frames, currentId } = get();
+      const { currentId } = get();
+      const frames = visible();
       if (!frames.length) return;
       const i = frames.findIndex((f) => f.id === currentId);
       get().goTo(Math.max(0, Math.min(frames.length - 1, i + delta)));
     },
 
+    /** Index into the visible (filtered) frames. */
     goTo(index) {
-      const f = get().frames[index];
+      const f = visible()[index];
       if (f) get().select(f.id);
     },
 
@@ -381,14 +462,9 @@ export const useStore = create<State>((set, get) => {
     },
 
     paste() {
-      const { clipboard, selection, currentId } = get();
+      const { clipboard } = get();
       if (!clipboard) return;
-      const targets = new Set(selection.length ? selection : currentId != null ? [currentId] : []);
-      set((s) => ({
-        frames: s.frames.map((f) =>
-          targets.has(f.id) ? { ...f, adjustments: { ...clipboard } } : f,
-        ),
-      }));
+      updateTargets((f) => ({ ...f, adjustments: { ...clipboard } }));
     },
 
     async removeSelection() {
@@ -410,12 +486,70 @@ export const useStore = create<State>((set, get) => {
     },
 
     toggleClipping: () => set((s) => ({ showClipping: !s.showClipping })),
-    toggleNegative: () => set((s) => ({ showNegative: !s.showNegative })),
+    toggleBefore: () => set((s) => ({ showBefore: !s.showBefore, showNegative: false })),
+    toggleNegative: () => set((s) => ({ showNegative: !s.showNegative, showBefore: false })),
     setHistogram: (histogram) => set({ histogram }),
     setExportOpen: (exportOpen) => set({ exportOpen }),
     setExportProgress: (exportProgress) => set({ exportProgress }),
     dismissErrors: () => set({ errors: [] }),
+    setPanelTab: (panelTab) => set({ panelTab }),
+    togglePanels: (hidden) => set((s) => ({ panelsHidden: hidden ?? !s.panelsHidden })),
+
+    setMeta(patch) {
+      updateTargets((f) => ({ ...f, meta: { ...f.meta, ...patch } }));
+      const prefs: Partial<Prefs> = {};
+      if (patch.creator !== undefined) prefs.creator = patch.creator;
+      if (patch.copyright !== undefined) prefs.copyright = patch.copyright;
+      if (Object.keys(prefs).length) savePrefs(prefs);
+    },
+
+    setArchiveValue(level, value) {
+      updateTargets((f) => {
+        const archive = Array.from({ length: Math.max(f.meta.archive.length, level + 1) }, (_, i) =>
+          i === level ? value : (f.meta.archive[i] ?? ""),
+        );
+        return { ...f, meta: { ...f.meta, archive } };
+      });
+    },
+
+    setArchiveLevels(names) {
+      savePrefs({ archiveLevels: names });
+      set({ archiveLevels: names });
+    },
+
+    setFilter(filter) {
+      set({ filter });
+      // Keep the current frame and the selection within what is shown.
+      const shown = visibleFrames({ ...get(), currentId: null });
+      if (!shown.length) return;
+      const ids = new Set(shown.map((f) => f.id));
+      const { currentId, selection } = get();
+      if (currentId == null || !ids.has(currentId)) get().select(shown[0].id);
+      else set({ selection: selection.filter((id) => ids.has(id)) });
+    },
   };
+});
+
+export const useVisibleFrames = () => useStore(useShallow(visibleFrames));
+
+// ---- Autosave to the per-folder roll files ----------------------------------
+
+setRollErrorHandler((msg) => useStore.setState((s) => ({ errors: [...s.errors, msg] })));
+
+useStore.subscribe((s, prev) => {
+  if (s.frames === prev.frames && s.cropMode === prev.cropMode && s.archiveLevels === prev.archiveLevels) return;
+  scheduleSave(() => {
+    const st = useStore.getState();
+    return {
+      archiveLevels: st.archiveLevels,
+      frames: st.frames.map((f) => ({
+        id: f.id,
+        path: f.path,
+        // An in-progress crop isn't saved until it's applied.
+        saved: pickSaved(st.cropMode && f.id === st.currentId ? { ...f, crop: st.cropBackup } : f),
+      })),
+    };
+  });
 });
 
 export const useCurrentFrame = () =>

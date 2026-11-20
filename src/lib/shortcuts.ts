@@ -37,8 +37,11 @@ export const SHORTCUT_HELP: [string, string][] = [
   ["G", "Color / grayscale"],
   ["N", "Neutral picker (⇧-click: 2nd point)"],
   ["R", "Recalc"],
+  ["I", "Adjust / Info panel"],
+  ["Tab", "Hide / show panels (image only)"],
   ["X", "Show clipping"],
-  ["B", "Before / after"],
+  ["B", "Before / after (auto conversion)"],
+  ["⇧B", "Show negative"],
   ["⌘C / ⌘V", "Copy / paste settings"],
   ["⌘A", "Select all frames"],
   ["⌘O", "Add images"],
@@ -49,7 +52,7 @@ export const SHORTCUT_HELP: [string, string][] = [
 function isTyping(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
   if (target instanceof HTMLInputElement) return target.type !== "range" && target.type !== "checkbox";
-  return target instanceof HTMLTextAreaElement || target.isContentEditable;
+  return target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement || target.isContentEditable;
 }
 
 export function handleKeyDown(e: KeyboardEvent, actions: { addImages: () => void }) {
@@ -67,6 +70,10 @@ export function handleKeyDown(e: KeyboardEvent, actions: { addImages: () => void
   }
   if (e.key === "Escape" && s.neutralMode) {
     s.toggleNeutralMode(false);
+    return;
+  }
+  if (e.key === "Escape" && s.panelsHidden) {
+    s.togglePanels(false);
     return;
   }
   const mod = e.metaKey || e.ctrlKey;
@@ -96,6 +103,11 @@ export function handleKeyDown(e: KeyboardEvent, actions: { addImages: () => void
     return;
   }
   switch (e.key) {
+    case "Tab":
+      // Instead of moving focus between buttons.
+      e.preventDefault();
+      s.togglePanels();
+      break;
     case "ArrowRight":
     case "Enter":
       e.preventDefault();
@@ -116,10 +128,14 @@ export function handleKeyDown(e: KeyboardEvent, actions: { addImages: () => void
           s.toggleClipping();
           break;
         case "b":
-          s.toggleNegative();
+          if (e.shiftKey) s.toggleNegative();
+          else s.toggleBefore();
           break;
         case "g":
           s.toggleGrayscale();
+          break;
+        case "i":
+          s.setPanelTab(s.panelTab === "info" ? "adjust" : "info");
           break;
         case "[":
           s.rotate(-1);

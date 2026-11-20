@@ -90,3 +90,68 @@ export const DEFAULT_ADJUSTMENTS: Adjustments = {
 };
 
 export type SliderKey = "density" | "contrast" | "saturation" | "cyan" | "magenta" | "yellow";
+
+/** Descriptive metadata for a frame, saved in the roll file and embedded on export. */
+export interface FrameMeta {
+  filmStock: string;
+  format: string;
+  process: string;
+  /** Box speed / EI, as typed. */
+  iso: string;
+  camera: string;
+  lens: string;
+  /** YYYY, YYYY-MM or YYYY-MM-DD. */
+  dateShot: string;
+  location: string;
+  city: string;
+  country: string;
+  rollId: string;
+  /** Values for the archive levels (names are an app preference, e.g. Binder / Page / Strip). */
+  archive: string[];
+  description: string;
+  /** Comma-separated; `>` or `|` makes a hierarchy, e.g. "Travel > Brazil". */
+  keywords: string;
+  creator: string;
+  copyright: string;
+}
+
+export type MetaKey = Exclude<keyof FrameMeta, "archive">;
+
+export const EMPTY_META: FrameMeta = {
+  filmStock: "",
+  format: "",
+  process: "",
+  iso: "",
+  camera: "",
+  lens: "",
+  dateShot: "",
+  location: "",
+  city: "",
+  country: "",
+  rollId: "",
+  archive: [],
+  description: "",
+  keywords: "",
+  creator: "",
+  copyright: "",
+};
+
+/** Shape sent to Rust (crates/negative/src/metadata.rs `Metadata`). */
+export interface ExportMetadata {
+  filmStock: string;
+  format: string;
+  process: string;
+  camera: string;
+  lens: string;
+  iso: number | null;
+  dateShot: string;
+  rollId: string;
+  description: string;
+  location: string;
+  city: string;
+  country: string;
+  archive: { name: string; value: string }[];
+  keywords: string[];
+  creator: string;
+  copyright: string;
+}

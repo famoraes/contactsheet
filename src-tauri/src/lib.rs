@@ -15,6 +15,8 @@ pub fn run() {
             commands::recalc,
             commands::neutralize,
             commands::export_images,
+            commands::read_roll,
+            commands::write_roll,
         ])
         .run(tauri::generate_context!())
         .expect("error while running ContactSheet");

@@ -1,13 +1,13 @@
 import { useState } from "react";
-import { useStore } from "../state/store";
+import { useStore, useVisibleFrames } from "../state/store";
 
 export function Toolbar({ onAddImages }: { onAddImages: () => void }) {
-  const frames = useStore((s) => s.frames);
+  const frames = useVisibleFrames();
   const currentId = useStore((s) => s.currentId);
   const showClipping = useStore((s) => s.showClipping);
-  const showNegative = useStore((s) => s.showNegative);
+  const showBefore = useStore((s) => s.showBefore);
   const progress = useStore((s) => s.exportProgress);
-  const { go, goTo, toggleClipping, toggleNegative, setExportOpen } = useStore.getState();
+  const { go, goTo, toggleClipping, toggleBefore, setExportOpen } = useStore.getState();
   const [editing, setEditing] = useState(false);
 
   const index = frames.findIndex((f) => f.id === currentId);
@@ -59,7 +59,7 @@ export function Toolbar({ onAddImages }: { onAddImages: () => void }) {
         <button className={`btn btn-toggle${showClipping ? " is-on" : ""}`} disabled={!has} onClick={toggleClipping}>
           Clipping <kbd>X</kbd>
         </button>
-        <button className={`btn btn-toggle${showNegative ? " is-on" : ""}`} disabled={!has} onClick={toggleNegative}>
+        <button className={`btn btn-toggle${showBefore ? " is-on" : ""}`} disabled={!has} onClick={toggleBefore}>
           Before / After <kbd>B</kbd>
         </button>
         {progress && progress.done < progress.total ? (

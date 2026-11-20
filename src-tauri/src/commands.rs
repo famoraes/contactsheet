@@ -10,6 +10,7 @@ use std::{
 use negative::{
     analyze, decode_tiff, downsample,
     export::{encode_jpeg, export_file, ExportSettings},
+    metadata::{embed, Metadata, Provenance},
     neutral::{neutralize as neutralize_analysis, sample_density},
     render::{render_preview as render_preview_buf, render_rgb8},
     Adjustments, Analysis, Crop, Framed, ImageF32, Orientation, Prepared, Rect, RgbSource, ViewOptions,
@@ -77,6 +78,9 @@ pub struct ExportItem {
     orientation: Orientation,
     #[serde(default)]
     crop: Option<Crop>,
+    /// Descriptive metadata to embed; `None` writes none.
+    #[serde(default)]
+    metadata: Option<Metadata>,
 }
 
 #[derive(Deserialize)]
@@ -287,6 +291,16 @@ pub async fn export_images(
         };
         for (i, (path, item)) in jobs.into_iter().enumerate() {
             let name = file_name(&path);
+            let embedded = item.metadata.as_ref().map(|m| {
+                let settings_json = serde_json::json!({
+                    "analysis": item.analysis,
+                    "adjustments": item.adjustments,
+                    "orientation": item.orientation,
+                    "crop": item.crop,
+                })
+                .to_string();
+                embed(m, &Provenance { source: path.display().to_string(), settings_json })
+            });
             let error = match export_file(
                 &path,
                 &item.analysis,
@@ -294,6 +308,7 @@ pub async fn export_images(
                 item.orientation,
                 item.crop,
                 &settings,
+                embedded.as_ref(),
             ) {
                 Ok(files) => {
                     summary
@@ -318,6 +333,37 @@ pub async fn export_images(
             );
         }
         Ok(summary)
+    })
+    .await
+}
+
+/// Name of the per-folder file holding edits and metadata for the scans in it.
+const ROLL_FILE: &str = "roll.contactsheet";
+
+/// Read the roll file in `dir`, if there is one. The contents are JSON owned by the UI.
+#[tauri::command]
+pub async fn read_roll(dir: String) -> Result<Option<String>, String> {
+    blocking(move || {
+        let path = Path::new(&dir).join(ROLL_FILE);
+        match std::fs::read_to_string(&path) {
+            Ok(s) => Ok(Some(s)),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(e) => Err(format!("{}: {e}", path.display())),
+        }
+    })
+    .await
+}
+
+/// Write the roll file in `dir` atomically (temp file + rename), so a crash
+/// mid-write never leaves a truncated file.
+#[tauri::command]
+pub async fn write_roll(dir: String, contents: String) -> Result<(), String> {
+    blocking(move || {
+        let path = Path::new(&dir).join(ROLL_FILE);
+        let tmp = Path::new(&dir).join(format!(".{ROLL_FILE}.tmp"));
+        std::fs::write(&tmp, contents)
+            .and_then(|_| std::fs::rename(&tmp, &path))
+            .map_err(|e| format!("Saving {}: {e}", path.display()))
     })
     .await
 }

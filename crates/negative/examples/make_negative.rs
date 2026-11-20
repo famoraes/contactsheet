@@ -15,6 +15,6 @@ fn main() {
         .iter()
         .map(|v| (v.clamp(0.0, 1.0) * 65535.0).round() as u16)
         .collect();
-    write_tiff16(std::path::Path::new(&out), width, height, &rgb).expect("write TIFF");
+    write_tiff16(std::path::Path::new(&out), width, height, &rgb, None).expect("write TIFF");
     println!("wrote {out} ({width}x{height}, 16-bit RGB)");
 }

@@ -5,6 +5,7 @@ import type {
   ExportOptions,
   ExportSummary,
   Crop,
+  ExportMetadata,
   ImageMeta,
   Orientation,
   ViewOptions,
@@ -66,6 +67,12 @@ export const exportImages = (
     analysis: Analysis;
     orientation: Orientation;
     crop: Crop | null;
+    metadata: ExportMetadata | null;
   }[],
   options: ExportOptions,
 ) => invoke<ExportSummary>("export_images", { items, options });
+
+/** Contents (JSON) of the roll file in `dir`, or null when there is none. */
+export const readRoll = (dir: string) => invoke<string | null>("read_roll", { dir });
+
+export const writeRoll = (dir: string, contents: string) => invoke<void>("write_roll", { dir, contents });

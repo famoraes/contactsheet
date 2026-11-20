@@ -7,13 +7,17 @@ use std::{
 use ::image::{
     codecs::jpeg::JpegEncoder, imageops::FilterType, ExtendedColorType, ImageBuffer, Rgb,
 };
-use tiff::encoder::{colortype, TiffEncoder};
+use tiff::{
+    encoder::{colortype, TiffEncoder},
+    tags::Tag,
+};
 
 use crate::{
     analysis::Analysis,
     decode::decode_tiff,
     geometry::{Crop, Framed, Orientation},
     image::{ImageF32, RgbSource},
+    metadata::{jpeg_with_xmp, Embed, SOFTWARE},
     pipeline::{Adjustments, Prepared},
     render::{render_rgb16, render_rgb8},
     Result,
@@ -29,20 +33,37 @@ pub struct ExportSettings {
     pub max_size: Option<u32>,
 }
 
-pub fn write_tiff16(path: &Path, width: u32, height: u32, rgb: &[u16]) -> Result<()> {
+/// Tag 700: XMP packet (TIFF/XMP spec, type BYTE).
+const TAG_XMP: Tag = Tag::Unknown(700);
+
+pub fn write_tiff16(path: &Path, width: u32, height: u32, rgb: &[u16], embed: Option<&Embed>) -> Result<()> {
     let mut enc = TiffEncoder::new(BufWriter::new(File::create(path)?))?;
-    enc.write_image::<colortype::RGB16>(width, height, rgb)?;
+    let mut img = enc.new_image::<colortype::RGB16>(width, height)?;
+    let dir = img.encoder();
+    dir.write_tag(Tag::Software, SOFTWARE)?;
+    if let Some(e) = embed {
+        for (tag, value) in [
+            (Tag::ImageDescription, &e.image_description),
+            (Tag::Model, &e.model),
+            (Tag::Artist, &e.artist),
+            (Tag::Copyright, &e.copyright),
+        ] {
+            if let Some(v) = value {
+                dir.write_tag(tag, v.as_str())?;
+            }
+        }
+        dir.write_tag(TAG_XMP, e.xmp.as_bytes())?;
+    }
+    img.write_data(rgb)?;
     Ok(())
 }
 
-pub fn write_jpeg(path: &Path, width: u32, height: u32, rgb: &[u8], quality: u8) -> Result<()> {
-    let mut w = BufWriter::new(File::create(path)?);
-    JpegEncoder::new_with_quality(&mut w, quality.clamp(1, 100)).encode(
-        rgb,
-        width,
-        height,
-        ExtendedColorType::Rgb8,
-    )?;
+pub fn write_jpeg(path: &Path, width: u32, height: u32, rgb: &[u8], quality: u8, embed: Option<&Embed>) -> Result<()> {
+    let mut bytes = encode_jpeg(width, height, rgb, quality)?;
+    if let Some(with) = embed.and_then(|e| jpeg_with_xmp(&bytes, &e.xmp)) {
+        bytes = with;
+    }
+    std::fs::write(path, bytes)?;
     Ok(())
 }
 
@@ -86,22 +107,24 @@ fn write_outputs<S: RgbSource>(
     prep: &Prepared,
     stem: &str,
     settings: &ExportSettings,
+    embed: Option<&Embed>,
 ) -> Result<Vec<PathBuf>> {
     let mut written = Vec::new();
     if settings.tiff16 {
         let path = settings.out_dir.join(format!("{stem}.tif"));
-        write_tiff16(&path, src.width(), src.height(), &render_rgb16(src, prep))?;
+        write_tiff16(&path, src.width(), src.height(), &render_rgb16(src, prep), embed)?;
         written.push(path);
     }
     if let Some(q) = settings.jpeg_quality {
         let path = settings.out_dir.join(format!("{stem}.jpg"));
-        write_jpeg(&path, src.width(), src.height(), &render_rgb8(src, prep), q)?;
+        write_jpeg(&path, src.width(), src.height(), &render_rgb8(src, prep), q, embed)?;
         written.push(path);
     }
     Ok(written)
 }
 
-/// Decode the full-resolution scan again and write the positive(s).
+/// Decode the full-resolution scan again and write the positive(s), embedding
+/// `embed` metadata when given.
 pub fn export_file(
     input: &Path,
     analysis: &Analysis,
@@ -109,6 +132,7 @@ pub fn export_file(
     orientation: Orientation,
     crop: Option<Crop>,
     settings: &ExportSettings,
+    embed: Option<&Embed>,
 ) -> Result<Vec<PathBuf>> {
     let raw = decode_tiff(input)?;
     let prep = Prepared::new(analysis, adjustments);
@@ -123,7 +147,7 @@ pub fn export_file(
     // Geometry first, then resize, so the size limit applies to the final frame.
     let framed = Framed::new(&raw, orientation, crop);
     match settings.max_size.and_then(|m| resize_to(&framed, m)) {
-        Some(small) => write_outputs(&small, &prep, &stem, settings),
-        None => write_outputs(&framed, &prep, &stem, settings),
+        Some(small) => write_outputs(&small, &prep, &stem, settings, embed),
+        None => write_outputs(&framed, &prep, &stem, settings, embed),
     }
 }

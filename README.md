@@ -34,3 +34,21 @@ Need a test file? `cargo run -p negative --example make_negative -- ~/Desktop/sy
 The math is log-domain and normalized per channel, so film base, light source brightness, bit depth and any power-law input gamma all cancel out.
 
 Preview: Rust renders a 2000 px proxy and sends RGBA bytes to the canvas. Only the newest slider value is rendered, with one render in flight at a time. Export decodes the full-resolution file again and runs the same code path.
+
+## Saving and metadata
+
+- **Roll files:** edits (sliders, analysis, neutral picks, crop, orientation) and metadata are autosaved to `roll.contactsheet` (JSON) in each scan folder, keyed by file name. Reopening a scan restores them. A folder only gets a file once something in it is edited.
+- **Info panel** (key `I`): film stock, format, process, ISO, roll, date shot, camera, lens, place, city, country, description, archive location, keywords, creator and copyright. Edits apply to every selected frame. Archive level names (default Binder / Page / Strip) are an app preference.
+- **Filter bar** above the filmstrip: free-text search plus film / year / roll / archive / camera filters. Navigation, select-all and "Export all" follow the filter.
+- **Export** embeds an XMP packet in TIFF (tag 700) and JPEG (APP1) files:
+
+  | Field | Written as | Shown in Lightroom as |
+  |---|---|---|
+  | Film stock, format, process | `lr:hierarchicalSubject` keywords `Film\|Stock\|…` | Keywords |
+  | Archive location | keyword `Archive\|Binder 3\|Page 12`, plus `photoshop:Instructions` | Keywords / Instructions |
+  | Roll | `photoshop:TransmissionReference` | Job |
+  | Date shot | `exif:DateTimeOriginal`, `photoshop:DateCreated` | Capture date |
+  | Camera, lens, ISO | `tiff:Model`, `exifEX:LensModel`/`aux:Lens`, `exif:ISOSpeedRatings` | Camera / Lens / ISO |
+  | Description, place, city, country | `dc:description`, `Iptc4xmpCore:Location`, `photoshop:City/Country` | Caption / Location |
+  | Creator, copyright | `dc:creator`, `dc:rights` | Creator / Copyright |
+  | Source scan, conversion settings | `xmpMM:DerivedFrom`, `cs:Settings` | - |

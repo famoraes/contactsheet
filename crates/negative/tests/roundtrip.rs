@@ -107,7 +107,7 @@ fn tiff_roundtrip_and_export() {
     let neg = demo_negative(300, 200);
     let rgb: Vec<u16> = neg.data.iter().map(|v| (v * 65535.0).round() as u16).collect();
     let input = dir.join("scan.tif");
-    write_tiff16(&input, 300, 200, &rgb).unwrap();
+    write_tiff16(&input, 300, 200, &rgb, None).unwrap();
 
     let raw = negative::decode_tiff(&input).unwrap();
     assert_eq!((raw.width, raw.height, raw.channels, raw.bit_depth), (300, 200, 3, 16));
@@ -124,27 +124,72 @@ fn tiff_roundtrip_and_export() {
         jpeg_quality: Some(90),
         max_size: None,
     };
-    let files = export_file(&input, &an, &Adjustments::default(), Orientation::default(), None, &settings).unwrap();
+    let files = export_file(&input, &an, &Adjustments::default(), Orientation::default(), None, &settings, None).unwrap();
     assert_eq!(files.len(), 2);
     let out = negative::decode_tiff(&files[0]).unwrap();
     assert_eq!((out.width, out.height, out.bit_depth), (300, 200, 16));
 
     let small = ExportSettings { max_size: Some(150), jpeg_quality: None, ..settings };
-    let files = export_file(&input, &an, &Adjustments::default(), Orientation::default(), None, &small).unwrap();
+    let files = export_file(&input, &an, &Adjustments::default(), Orientation::default(), None, &small, None).unwrap();
     let out = negative::decode_tiff(&files[0]).unwrap();
     assert_eq!((out.width, out.height), (150, 100));
 
     let portrait = Orientation { rotation: 1, mirror: false };
-    let files = export_file(&input, &an, &Adjustments::default(), portrait, None, &small).unwrap();
+    let files = export_file(&input, &an, &Adjustments::default(), portrait, None, &small, None).unwrap();
     let out = negative::decode_tiff(&files[0]).unwrap();
     assert_eq!((out.width, out.height), (100, 150), "rotated export swaps dimensions");
 
     // Crop the middle half, straightened 3°; the output is the crop at full resolution.
     let crop = Crop { x: 0.25, y: 0.25, w: 0.5, h: 0.5, angle: 3.0 };
     let full = ExportSettings { max_size: None, ..small };
-    let files = export_file(&input, &an, &Adjustments::default(), Orientation::default(), Some(crop), &full).unwrap();
+    let files = export_file(&input, &an, &Adjustments::default(), Orientation::default(), Some(crop), &full, None).unwrap();
     let out = negative::decode_tiff(&files[0]).unwrap();
     assert_eq!((out.width, out.height), (150, 100), "cropped export is the crop size");
+
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn export_embeds_metadata() {
+    use negative::metadata::{embed, Metadata, Provenance};
+    use tiff::{decoder::Decoder, tags::Tag};
+
+    let dir = std::env::temp_dir().join(format!("negative-meta-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let neg = demo_negative(60, 40);
+    let rgb: Vec<u16> = neg.data.iter().map(|v| (v * 65535.0).round() as u16).collect();
+    let input = dir.join("scan.tif");
+    write_tiff16(&input, 60, 40, &rgb, None).unwrap();
+
+    let meta = Metadata {
+        film_stock: "Ilford HP5+".into(),
+        camera: "Nikon FM2".into(),
+        city: "Zürich".into(),
+        copyright: "© Me".into(),
+        ..Default::default()
+    };
+    let e = embed(&meta, &Provenance { source: input.display().to_string(), settings_json: "{}".into() });
+    let settings = ExportSettings { out_dir: dir.join("out"), tiff16: true, jpeg_quality: Some(90), max_size: None };
+    let an = analyze(&negative::decode_tiff(&input).unwrap(), Rect::DEFAULT_INSET);
+    let files = export_file(&input, &an, &Adjustments::default(), Orientation::default(), None, &settings, Some(&e)).unwrap();
+
+    // TIFF: XMP in tag 700, plain tags in IFD0, image still decodes.
+    let mut dec = Decoder::new(std::fs::File::open(&files[0]).unwrap()).unwrap();
+    // tiff 0.9 reads long BYTE arrays back as u64 values.
+    let xmp: Vec<u8> = dec.get_tag_u64_vec(Tag::Unknown(700)).unwrap().into_iter().map(|b| b as u8).collect();
+    let xmp = String::from_utf8(xmp).unwrap();
+    assert!(xmp.contains("Film|Stock|Ilford HP5+") && xmp.contains("Zürich"));
+    assert_eq!(dec.get_tag_ascii_string(Tag::Model).unwrap(), "Nikon FM2");
+    assert!(dec.get_tag_ascii_string(Tag::Copyright).is_err(), "non-ASCII copyright is XMP-only");
+    assert_eq!(dec.get_tag_ascii_string(Tag::Software).unwrap(), "ContactSheet");
+    assert_eq!(negative::decode_tiff(&files[0]).unwrap().width, 60);
+
+    // JPEG: XMP APP1 present and the file still decodes.
+    let jpg = std::fs::read(&files[1]).unwrap();
+    let hay = String::from_utf8_lossy(&jpg);
+    assert!(hay.contains("http://ns.adobe.com/xap/1.0/") && hay.contains("Ilford HP5+"));
+    let decoded = image::load_from_memory(&jpg).unwrap();
+    assert_eq!((decoded.width(), decoded.height()), (60, 40));
 
     std::fs::remove_dir_all(&dir).ok();
 }

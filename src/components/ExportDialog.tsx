@@ -2,14 +2,18 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { listen } from "@tauri-apps/api/event";
 import { useState } from "react";
 import { exportImages } from "../lib/api";
+import { isFilterActive, toExportMetadata } from "../lib/meta";
 import type { ExportProgress, ExportSummary } from "../lib/types";
-import { useStore } from "../state/store";
+import { useStore, useVisibleFrames } from "../state/store";
 
 type Scope = "selection" | "all";
 
 export function ExportDialog() {
-  const frames = useStore((s) => s.frames);
+  const frames = useVisibleFrames();
+  const filtered = useStore((s) => isFilterActive(s.filter));
+  const archiveLevels = useStore((s) => s.archiveLevels);
   const selection = useStore((s) => s.selection);
+  const [embedMeta, setEmbedMeta] = useState(true);
   const { setExportOpen, setExportProgress } = useStore.getState();
   const [scope, setScope] = useState<Scope>(selection.length > 1 ? "selection" : "all");
   const [tiff, setTiff] = useState(true);
@@ -44,6 +48,7 @@ export function ExportDialog() {
           analysis: f.analysis,
           orientation: f.orientation,
           crop: f.crop,
+          metadata: embedMeta ? toExportMetadata(f.meta, archiveLevels) : null,
         })),
         { outDir, tiff, jpeg, jpegQuality: quality, maxSize: resize ? maxSize : null },
       );
@@ -69,7 +74,7 @@ export function ExportDialog() {
               Selection ({selection.length})
             </button>
             <button className={scope === "all" ? "is-on" : ""} onClick={() => setScope("all")}>
-              All ({frames.length})
+              {filtered ? "Filtered" : "All"} ({frames.length})
             </button>
           </div>
         </div>
@@ -91,6 +96,14 @@ export function ExportDialog() {
               disabled={!jpeg}
               onChange={(e) => setQuality(Math.max(50, Math.min(100, Number(e.target.value) || 92)))}
             />
+          </label>
+        </div>
+
+        <div className="field">
+          <label>Metadata</label>
+          <label className="check">
+            <input type="checkbox" checked={embedMeta} onChange={(e) => setEmbedMeta(e.target.checked)} />
+            Embed film, date, location, archive &amp; keywords (XMP)
           </label>
         </div>
 

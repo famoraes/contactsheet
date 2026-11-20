@@ -1,6 +1,7 @@
 import { memo, useEffect, useRef, useState } from "react";
 import { renderThumbnail } from "../lib/api";
-import { useStore, type Frame } from "../state/store";
+import { useStore, useVisibleFrames, type Frame } from "../state/store";
+import { FilterBar } from "./FilterBar";
 
 const THUMB_DEBOUNCE_MS = 250;
 
@@ -70,25 +71,35 @@ const Thumb = memo(function Thumb({
 });
 
 export function Filmstrip() {
-  const frames = useStore((s) => s.frames);
+  const all = useStore((s) => s.frames);
+  const frames = useVisibleFrames();
   const currentId = useStore((s) => s.currentId);
   const selection = useStore((s) => s.selection);
   const pending = useStore((s) => s.pendingLoads);
   const selected = new Set(selection);
 
   return (
-    <div className="filmstrip">
-      {frames.map((f, i) => (
-        <Thumb key={f.id} frame={f} index={i} current={f.id === currentId} selected={selected.has(f.id)} />
-      ))}
-      {Array.from({ length: pending }, (_, i) => (
-        <div key={`p${i}`} className="thumb is-loading">
-          <div className="thumb-img">
-            <span className="spinner" />
+    <div className="strip">
+      {all.length > 0 && <FilterBar />}
+      <div className="filmstrip">
+        {frames.map((f) => (
+          <Thumb
+            key={f.id}
+            frame={f}
+            index={all.indexOf(f)}
+            current={f.id === currentId}
+            selected={selected.has(f.id)}
+          />
+        ))}
+        {Array.from({ length: pending }, (_, i) => (
+          <div key={`p${i}`} className="thumb is-loading">
+            <div className="thumb-img">
+              <span className="spinner" />
+            </div>
+            <div className="thumb-label">Loading…</div>
           </div>
-          <div className="thumb-label">Loading…</div>
-        </div>
-      ))}
+        ))}
+      </div>
     </div>
   );
 }
