@@ -18,6 +18,7 @@
 //! from cameras, scanners and converters alike.
 
 pub mod analysis;
+pub mod autocrop;
 pub mod decode;
 pub mod error;
 pub mod export;

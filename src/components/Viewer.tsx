@@ -42,7 +42,7 @@ export function Viewer() {
   const cropMode = useStore((s) => s.cropMode);
   const cropAspect = useStore((s) => s.cropAspect);
   const cropPortrait = useStore((s) => s.cropPortrait);
-  const { setHistogram, pickNeutral, setCrop, setCropAngle, commitCrop, cancelCrop } = useStore.getState();
+  const { setHistogram, pickNeutral, setCrop, setCropAngle, commitCrop, cancelCrop, autoCrop } = useStore.getState();
   const fitRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const pending = useRef<Request | null>(null);
@@ -199,6 +199,9 @@ export function Viewer() {
           <span className="crop-dims">
             {cropPixels(crop, full).w} × {cropPixels(crop, full).h}
           </span>
+          <button className="btn" onClick={() => void autoCrop()} title="Find the frame edges (⇧C)">
+            Auto
+          </button>
           <button className="btn" onClick={cancelCrop}>
             Cancel <kbd>Esc</kbd>
           </button>

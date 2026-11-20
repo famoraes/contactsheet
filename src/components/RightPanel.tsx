@@ -153,11 +153,19 @@ export function RightPanel() {
               </button>
               <button
                 className="btn"
+                disabled={disabled}
+                onClick={() => void s.autoCrop()}
+                title="Find the frame edges and crop away holder, rebate and sprocket holes (⇧C). Applies to all selected frames."
+              >
+                Auto{!cropMode && selectionCount > 1 ? ` → ${selectionCount}` : ""}
+              </button>
+              <button
+                className="btn"
                 disabled={disabled || (!cropMode && !frame?.crop)}
                 onClick={s.resetCrop}
                 title="Remove crop and straightening"
               >
-                Reset crop
+                Reset
               </button>
             </div>
             <div className="aspect-row">

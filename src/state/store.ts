@@ -98,6 +98,8 @@ interface State {
   setCropAngle: (angle: number) => void;
   setCropAspect: (id: string, portrait?: boolean) => void;
   resetCrop: () => void;
+  /** Detect the frame edges: sets the box in crop mode, else crops every selected frame. */
+  autoCrop: () => Promise<void>;
   resetCurrent: () => void;
   recalcCurrent: () => Promise<void>;
   copy: () => void;
@@ -194,6 +196,8 @@ export const useStore = create<State>((set, get) => {
       fail(e);
     }
   };
+
+  const setCurrentCrop = (crop: Crop) => updateCurrent((f) => ({ ...f, crop }));
 
   /** Leave crop mode before doing anything that changes the current frame. */
   const leaveModes = () => {
@@ -440,6 +444,43 @@ export const useStore = create<State>((set, get) => {
         updateFrame(f.id, (x) => ({ ...x, crop: null }));
         void recalcFrame(f.id);
       }
+    },
+
+    async autoCrop() {
+      const { cropMode, cropAspect, cropPortrait } = get();
+      const f = current();
+      if (cropMode) {
+        if (!f) return;
+        try {
+          const found = await api.autoCrop(f.id, f.orientation);
+          const size = displaySize(f);
+          const c = found ?? { ...FULL_CROP };
+          const ratio = aspectRatio(cropAspect, cropPortrait, size);
+          setCurrentCrop(ratio ? conformAspect(c, ratio, size) : fitCrop(c, size));
+        } catch (e) {
+          fail(e);
+        }
+        return;
+      }
+      const ids = [...targets()];
+      const misses: string[] = [];
+      await Promise.all(
+        ids.map(async (id) => {
+          const x = get().frames.find((fr) => fr.id === id);
+          if (!x) return;
+          try {
+            const found = await api.autoCrop(id, x.orientation);
+            const crop = found ? fitCrop(found, displaySize(x)) : null;
+            if (!found) misses.push(x.name);
+            if (sameCrop(crop, x.crop)) return;
+            updateFrame(id, (y) => ({ ...y, crop }));
+            await recalcFrame(id);
+          } catch (e) {
+            fail(e);
+          }
+        }),
+      );
+      if (misses.length && ids.length === 1) fail(`AutoCrop: no border found on ${misses[0]}.`);
     },
 
     resetCurrent() {

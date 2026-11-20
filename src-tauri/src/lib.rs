@@ -13,6 +13,7 @@ pub fn run() {
             commands::render_preview,
             commands::render_thumbnail,
             commands::recalc,
+            commands::auto_crop,
             commands::neutralize,
             commands::export_images,
             commands::read_roll,

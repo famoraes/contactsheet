@@ -51,6 +51,10 @@ export async function renderThumbnail(
 export const recalc = (id: number, orientation: Orientation, crop: Crop | null) =>
   invoke<Analysis>("recalc", { id, orientation, crop });
 
+/** Picture area of the frame as displayed, or null when it has no border. */
+export const autoCrop = (id: number, orientation: Orientation) =>
+  invoke<Crop | null>("auto_crop", { id, orientation });
+
 /** Points are normalized display coordinates; `analysis` should be the automatic one. */
 export const neutralize = (
   id: number,

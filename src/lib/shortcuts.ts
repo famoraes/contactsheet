@@ -32,6 +32,7 @@ export const SHORTCUT_HELP: [string, string][] = [
   ["1 2 · 3 4 · 5 6", "Cyan · Magenta · Yellow − / +"],
   ["⇧ + adjust key", "Step by 5 instead of 1"],
   ["C", "Crop & straighten (↵ done, Esc cancel)"],
+  ["⇧C", "AutoCrop (selected frames)"],
   ["[ / ]", "Rotate left / right"],
   ["H / V", "Flip horizontal / vertical"],
   ["G", "Color / grayscale"],
@@ -156,7 +157,8 @@ export function handleKeyDown(e: KeyboardEvent, actions: { addImages: () => void
           s.toggleNeutralMode();
           break;
         case "c":
-          if (s.cropMode) void s.commitCrop();
+          if (e.shiftKey) void s.autoCrop();
+          else if (s.cropMode) void s.commitCrop();
           else s.enterCrop();
           break;
       }

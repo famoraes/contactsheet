@@ -8,7 +8,7 @@ use std::{
 };
 
 use negative::{
-    analyze, decode_tiff, downsample,
+    analyze, autocrop::auto_crop as detect_crop, decode_tiff, downsample,
     export::{encode_jpeg, export_file, ExportSettings},
     metadata::{embed, Metadata, Provenance},
     neutral::{neutralize as neutralize_analysis, sample_density},
@@ -233,6 +233,18 @@ pub async fn recalc(
         Ok(analyze(&Framed::new(&img.proxy, orientation, crop), region))
     })
     .await
+}
+
+/// Find the picture area (excluding holder, film rebate, sprocket holes) of the
+/// frame as displayed under `orientation`. `None` means no border was found.
+#[tauri::command]
+pub async fn auto_crop(
+    state: State<'_, AppState>,
+    id: u32,
+    orientation: Orientation,
+) -> Result<Option<Crop>, String> {
+    let img = state.get(id)?;
+    blocking(move || Ok(detect_crop(&negative::Oriented::new(&img.proxy, orientation)))).await
 }
 
 /// Make the picked points neutral. `points` are normalized display coordinates
