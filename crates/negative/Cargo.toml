@@ -2,7 +2,9 @@
 name = "negative"
 version = "0.1.0"
 edition = "2021"
-description = "Film negative inversion core: TIFF decode, analysis, positive rendering, export"
+license = "Apache-2.0"
+repository = "https://github.com/famoraes/contactsheet"
+description = "Film negative inversion core: TIFF/RAW decode, analysis, positive rendering, export"
 
 [dependencies]
 tiff = "0.9"
