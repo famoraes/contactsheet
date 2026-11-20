@@ -23,6 +23,7 @@ pub mod decode;
 pub mod error;
 pub mod export;
 pub mod geometry;
+pub mod icc;
 pub mod image;
 pub mod metadata;
 pub mod neutral;

@@ -182,12 +182,15 @@ fn export_embeds_metadata() {
     assert_eq!(dec.get_tag_ascii_string(Tag::Model).unwrap(), "Nikon FM2");
     assert!(dec.get_tag_ascii_string(Tag::Copyright).is_err(), "non-ASCII copyright is XMP-only");
     assert_eq!(dec.get_tag_ascii_string(Tag::Software).unwrap(), "ContactSheet");
+    let icc = dec.get_tag_u8_vec(Tag::Unknown(34675)).unwrap(); // UNDEFINED reads back as bytes
+    assert_eq!(icc, negative::icc::srgb_profile(), "sRGB profile embedded");
     assert_eq!(negative::decode_tiff(&files[0]).unwrap().width, 60);
 
     // JPEG: XMP APP1 present and the file still decodes.
     let jpg = std::fs::read(&files[1]).unwrap();
     let hay = String::from_utf8_lossy(&jpg);
     assert!(hay.contains("http://ns.adobe.com/xap/1.0/") && hay.contains("Ilford HP5+"));
+    assert!(hay.contains("ICC_PROFILE"), "JPEG carries the sRGB profile");
     let decoded = image::load_from_memory(&jpg).unwrap();
     assert_eq!((decoded.width(), decoded.height()), (60, 40));
 

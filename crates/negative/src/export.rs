@@ -1,15 +1,17 @@
 use std::{
+    borrow::Cow,
     fs::File,
     io::BufWriter,
     path::{Path, PathBuf},
+    sync::OnceLock,
 };
 
 use ::image::{
-    codecs::jpeg::JpegEncoder, imageops::FilterType, ExtendedColorType, ImageBuffer, Rgb,
+    codecs::jpeg::JpegEncoder, imageops::FilterType, ExtendedColorType, ImageBuffer, ImageEncoder, Rgb,
 };
 use tiff::{
-    encoder::{colortype, TiffEncoder},
-    tags::Tag,
+    encoder::{colortype, TiffEncoder, TiffValue},
+    tags::{Tag, Type},
 };
 
 use crate::{
@@ -35,12 +37,35 @@ pub struct ExportSettings {
 
 /// Tag 700: XMP packet (TIFF/XMP spec, type BYTE).
 const TAG_XMP: Tag = Tag::Unknown(700);
+/// Tag 34675: embedded ICC profile (type UNDEFINED).
+const TAG_ICC: Tag = Tag::Unknown(34675);
+
+/// Exports are sRGB; this profile says so.
+fn srgb_icc() -> &'static [u8] {
+    static ICC: OnceLock<Vec<u8>> = OnceLock::new();
+    ICC.get_or_init(crate::icc::srgb_profile)
+}
+
+/// Opaque bytes written with TIFF type UNDEFINED.
+struct Undefined<'a>(&'a [u8]);
+
+impl TiffValue for Undefined<'_> {
+    const BYTE_LEN: u8 = 1;
+    const FIELD_TYPE: Type = Type::UNDEFINED;
+    fn count(&self) -> usize {
+        self.0.len()
+    }
+    fn data(&self) -> Cow<'_, [u8]> {
+        Cow::Borrowed(self.0)
+    }
+}
 
 pub fn write_tiff16(path: &Path, width: u32, height: u32, rgb: &[u16], embed: Option<&Embed>) -> Result<()> {
     let mut enc = TiffEncoder::new(BufWriter::new(File::create(path)?))?;
     let mut img = enc.new_image::<colortype::RGB16>(width, height)?;
     let dir = img.encoder();
     dir.write_tag(Tag::Software, SOFTWARE)?;
+    dir.write_tag(TAG_ICC, Undefined(srgb_icc()))?;
     if let Some(e) = embed {
         for (tag, value) in [
             (Tag::ImageDescription, &e.image_description),
@@ -59,7 +84,10 @@ pub fn write_tiff16(path: &Path, width: u32, height: u32, rgb: &[u16], embed: Op
 }
 
 pub fn write_jpeg(path: &Path, width: u32, height: u32, rgb: &[u8], quality: u8, embed: Option<&Embed>) -> Result<()> {
-    let mut bytes = encode_jpeg(width, height, rgb, quality)?;
+    let mut bytes = Vec::new();
+    let mut enc = JpegEncoder::new_with_quality(&mut bytes, quality.clamp(1, 100));
+    enc.set_icc_profile(srgb_icc().to_vec()).expect("JPEG encoder supports ICC profiles");
+    enc.write_image(rgb, width, height, ExtendedColorType::Rgb8)?;
     if let Some(with) = embed.and_then(|e| jpeg_with_xmp(&bytes, &e.xmp)) {
         bytes = with;
     }
