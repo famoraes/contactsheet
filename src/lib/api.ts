@@ -36,6 +36,34 @@ export async function renderPreview(
   return { width, height, pixels: new Uint8ClampedArray(buf, 8, width * height * 4) };
 }
 
+export interface RegionTile extends PreviewFrame {
+  /** Full-resolution frame size (after orientation and crop). */
+  fullWidth: number;
+  fullHeight: number;
+}
+
+/** Part of the frame at full resolution (100% zoom); x/y/w/h in full-res frame pixels. */
+export async function renderRegion(
+  id: number,
+  adjustments: Adjustments,
+  analysis: Analysis,
+  orientation: Orientation,
+  crop: Crop | null,
+  view: ViewOptions,
+  rect: { x: number; y: number; w: number; h: number },
+): Promise<RegionTile> {
+  const buf = await invoke<ArrayBuffer>("render_region", { id, adjustments, analysis, orientation, crop, view, ...rect });
+  const dv = new DataView(buf);
+  const [width, height] = [dv.getUint32(0, true), dv.getUint32(4, true)];
+  return {
+    width,
+    height,
+    fullWidth: dv.getUint32(8, true),
+    fullHeight: dv.getUint32(12, true),
+    pixels: new Uint8ClampedArray(buf, 16, width * height * 4),
+  };
+}
+
 export async function renderThumbnail(
   id: number,
   adjustments: Adjustments,

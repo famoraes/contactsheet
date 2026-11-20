@@ -29,6 +29,42 @@ impl RgbSource for ImageF32 {
     }
 }
 
+/// A rectangular part of another image.
+pub struct Window<'a, S: RgbSource> {
+    src: &'a S,
+    x0: usize,
+    y0: usize,
+    w: usize,
+    h: usize,
+    sw: usize,
+}
+
+impl<'a, S: RgbSource> Window<'a, S> {
+    /// The `w` x `h` rectangle at (`x0`, `y0`), clamped to the source.
+    pub fn new(src: &'a S, x0: u32, y0: u32, w: u32, h: u32) -> Self {
+        let (sw, sh) = (src.width(), src.height());
+        let x0 = x0.min(sw.saturating_sub(1));
+        let y0 = y0.min(sh.saturating_sub(1));
+        let w = w.clamp(1, sw - x0);
+        let h = h.clamp(1, sh - y0);
+        Window { src, x0: x0 as usize, y0: y0 as usize, w: w as usize, h: h as usize, sw: sw as usize }
+    }
+}
+
+impl<S: RgbSource> RgbSource for Window<'_, S> {
+    fn width(&self) -> u32 {
+        self.w as u32
+    }
+    fn height(&self) -> u32 {
+        self.h as u32
+    }
+    #[inline]
+    fn rgb(&self, i: usize) -> [f32; 3] {
+        let (x, y) = (i % self.w, i / self.w);
+        self.src.rgb((self.y0 + y) * self.sw + self.x0 + x)
+    }
+}
+
 /// Box-filter downsample by an integer factor so the long edge is <= `max_long`.
 /// Averaging happens on linear transmittance, which is physically correct.
 pub fn downsample<S: RgbSource>(src: &S, max_long: u32) -> ImageF32 {

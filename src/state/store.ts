@@ -84,6 +84,8 @@ interface State {
   panelTab: "adjust" | "info";
   /** Tab: hide toolbar, panel and filmstrip to show only the image. */
   panelsHidden: boolean;
+  /** 100% zoom: the frame point (normalized 0..1) at the centre of the view; null = fit. */
+  zoomCenter: [number, number] | null;
   /** Names of the physical archive levels, e.g. Binder / Page / Strip. */
   archiveLevels: string[];
   filter: FrameFilter;
@@ -129,6 +131,8 @@ interface State {
   dismissErrors: () => void;
   setPanelTab: (tab: "adjust" | "info") => void;
   togglePanels: (hidden?: boolean) => void;
+  setZoom: (center: [number, number] | null) => void;
+  toggleZoom: () => void;
   /** Set metadata fields on every selected frame. */
   setMeta: (patch: Partial<Pick<FrameMeta, MetaKey>>) => void;
   setArchiveValue: (level: number, value: string) => void;
@@ -245,6 +249,7 @@ export const useStore = create<State>((set, get) => {
     exportProgress: null,
     panelTab: "adjust",
     panelsHidden: false,
+    zoomCenter: null,
     archiveLevels: loadPrefs().archiveLevels,
     filter: EMPTY_FILTER,
 
@@ -411,7 +416,7 @@ export const useStore = create<State>((set, get) => {
     enterCrop() {
       const f = current();
       if (!f || get().cropMode) return;
-      set({ cropMode: true, neutralMode: false, cropBackup: f.crop });
+      set({ cropMode: true, neutralMode: false, cropBackup: f.crop, zoomCenter: null });
       updateFrame(f.id, (x) => ({ ...x, crop: x.crop ?? { ...FULL_CROP } }));
     },
 
@@ -595,6 +600,11 @@ export const useStore = create<State>((set, get) => {
     dismissErrors: () => set({ errors: [] }),
     setPanelTab: (panelTab) => set({ panelTab }),
     togglePanels: (hidden) => set((s) => ({ panelsHidden: hidden ?? !s.panelsHidden })),
+    setZoom: (zoomCenter) => set({ zoomCenter }),
+    toggleZoom: () => {
+      if (get().cropMode) return;
+      set((s) => ({ zoomCenter: s.zoomCenter ? null : [0.5, 0.5] }));
+    },
 
     setMeta(patch) {
       updateTargets((f) => ({ ...f, meta: { ...f.meta, ...patch } }));

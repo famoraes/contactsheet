@@ -12,6 +12,7 @@ pub fn run() {
             commands::remove_images,
             commands::render_preview,
             commands::render_thumbnail,
+            commands::render_region,
             commands::recalc,
             commands::auto_crop,
             commands::roll_analysis,

@@ -40,6 +40,7 @@ export const SHORTCUT_HELP: [string, string][] = [
   ["N", "Neutral picker (⇧-click: 2nd point)"],
   ["R", "Recalc"],
   ["I", "Adjust / Info panel"],
+  ["Z / double-click", "Zoom 100% / fit (drag or scroll to pan)"],
   ["Tab", "Hide / show panels (image only)"],
   ["X", "Show clipping"],
   ["B", "Before / after (auto conversion)"],
@@ -143,6 +144,9 @@ export function handleKeyDown(e: KeyboardEvent, actions: { addImages: () => void
           if (f) s.setLook(f.adjustments.look === "flat" ? "normal" : "flat");
           break;
         }
+        case "z":
+          s.toggleZoom();
+          break;
         case "i":
           s.setPanelTab(s.panelTab === "info" ? "adjust" : "info");
           break;

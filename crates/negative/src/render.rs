@@ -36,11 +36,18 @@ fn view_pixel(prep: &Prepared, view: ViewOptions, px: [f32; 3]) -> [u8; 3] {
 
 /// Preview buffer: 8-byte header (width, height as little-endian u32) + RGBA8 pixels.
 pub fn render_preview<S: RgbSource>(src: &S, prep: &Prepared, view: ViewOptions) -> Vec<u8> {
+    render_rgba(src, prep, view, &[src.width(), src.height()])
+}
+
+/// RGBA8 pixels after a header of little-endian u32 values.
+pub fn render_rgba<S: RgbSource>(src: &S, prep: &Prepared, view: ViewOptions, header: &[u32]) -> Vec<u8> {
     let (w, h) = (src.width() as usize, src.height() as usize);
-    let mut out = vec![0u8; 8 + w * h * 4];
-    let (header, pixels) = out.split_at_mut(8);
-    header[0..4].copy_from_slice(&(w as u32).to_le_bytes());
-    header[4..8].copy_from_slice(&(h as u32).to_le_bytes());
+    let hl = header.len() * 4;
+    let mut out = vec![0u8; hl + w * h * 4];
+    let (head, pixels) = out.split_at_mut(hl);
+    for (i, v) in header.iter().enumerate() {
+        head[i * 4..i * 4 + 4].copy_from_slice(&v.to_le_bytes());
+    }
     pixels.par_chunks_mut(w * 4).enumerate().for_each(|(y, row)| {
         for x in 0..w {
             let [r, g, b] = view_pixel(prep, view, src.rgb(y * w + x));

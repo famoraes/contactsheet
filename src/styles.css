@@ -942,3 +942,28 @@ kbd {
   padding: 0 10px;
   font-size: 11px;
 }
+
+/* ---------- 100% zoom ---------- */
+.viewer-fit.is-zoomed {
+  inset: 0;
+  display: block;
+  overflow: hidden;
+  cursor: grab;
+}
+.viewer-fit.is-zoomed .viewer-image {
+  position: absolute;
+}
+.viewer-fit.is-panning {
+  cursor: grabbing;
+}
+.viewer-fit.is-zoomed .viewer-image.is-picking {
+  cursor: crosshair;
+}
+.viewer-tile {
+  position: absolute;
+  display: block;
+  pointer-events: none;
+}
+.badge-dim {
+  color: var(--text-dim);
+}

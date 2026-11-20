@@ -34,5 +34,5 @@ pub use analysis::{analyze, analyze_many, Analysis, Rect};
 pub use decode::{decode_tiff, RawImage};
 pub use error::{Error, Result};
 pub use geometry::{Crop, Framed, Orientation, Oriented};
-pub use image::{downsample, ImageF32, RgbSource};
+pub use image::{downsample, ImageF32, RgbSource, Window};
 pub use pipeline::{Adjustments, Look, LookPreset, Prepared, ViewOptions};

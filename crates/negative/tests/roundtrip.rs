@@ -209,3 +209,28 @@ fn roll_analysis_pools_frames() {
         assert!(roll.lo[c] <= one.lo[c].min(t.lo[c]) + 0.01 && roll.hi[c] >= one.hi[c].max(t.hi[c]) - 0.01);
     }
 }
+
+#[test]
+fn zoom_tile_matches_full_render() {
+    use negative::{render::{render_preview, render_rgba}, Framed, ViewOptions, Window};
+    let neg = demo_negative(240, 160);
+    let an = analyze(&neg, Rect::DEFAULT_INSET);
+    let prep = Prepared::new(&an, &Adjustments::default());
+    let crop = Crop { x: 0.1, y: 0.05, w: 0.8, h: 0.85, angle: 2.0 };
+    let frame = Framed::new(&neg, Orientation { rotation: 1, mirror: true }, Some(crop));
+    let full = render_preview(&frame, &prep, ViewOptions::default());
+    let fw = frame.width() as usize;
+    let (x, y, w, h) = (17u32, 23u32, 40u32, 30u32);
+    let tile = render_rgba(&Window::new(&frame, x, y, w, h), &prep, ViewOptions::default(), &[w, h, frame.width(), frame.height()]);
+    assert_eq!(u32::from_le_bytes(tile[8..12].try_into().unwrap()), frame.width());
+    for ty in 0..h as usize {
+        for tx in 0..w as usize {
+            let a = &tile[16 + (ty * w as usize + tx) * 4..][..4];
+            let b = &full[8 + ((y as usize + ty) * fw + x as usize + tx) * 4..][..4];
+            assert_eq!(a, b, "pixel {tx},{ty}");
+        }
+    }
+    // Windows are clamped to the frame.
+    let edge = Window::new(&frame, frame.width() - 5, 0, 100, 10);
+    assert_eq!((edge.width(), edge.height()), (5, 10));
+}

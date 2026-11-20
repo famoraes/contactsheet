@@ -3,7 +3,7 @@ use std::{
     path::{Path, PathBuf},
     sync::{
         atomic::{AtomicU32, Ordering},
-        Arc, RwLock,
+        Arc, Mutex, RwLock,
     },
 };
 
@@ -12,8 +12,9 @@ use negative::{
     export::{encode_jpeg, export_file, ExportSettings},
     metadata::{embed, Metadata, Provenance},
     neutral::{neutralize as neutralize_analysis, sample_density},
-    render::{render_preview as render_preview_buf, render_rgb8},
-    Adjustments, Analysis, Crop, Framed, ImageF32, Orientation, Prepared, Rect, RgbSource, ViewOptions,
+    render::{render_preview as render_preview_buf, render_rgb8, render_rgba},
+    Adjustments, Analysis, Crop, Framed, ImageF32, Orientation, Prepared, RawImage, Rect, RgbSource, ViewOptions,
+    Window,
 };
 use serde::{Deserialize, Serialize};
 use tauri::{ipc::Response, AppHandle, Emitter, State};
@@ -31,10 +32,14 @@ struct LoadedImage {
     thumb: ImageF32,
 }
 
+/// Decoded full-resolution scans kept for 100% zoom (most recent last).
+const FULL_RES_CACHE: usize = 2;
+
 #[derive(Default)]
 struct Shared {
     images: RwLock<HashMap<u32, Arc<LoadedImage>>>,
     next_id: AtomicU32,
+    full: Mutex<Vec<(u32, Arc<RawImage>)>>,
 }
 
 #[derive(Default, Clone)]
@@ -51,6 +56,29 @@ impl AppState {
             .get(&id)
             .cloned()
             .ok_or_else(|| format!("unknown image id {id}"))
+    }
+
+    /// The full-resolution scan, decoded on first use and kept in a small LRU.
+    fn full_res(&self, id: u32) -> Result<Arc<RawImage>, String> {
+        let lock = || self.shared.full.lock().map_err(|_| "cache poisoned".to_string());
+        {
+            let mut cache = lock()?;
+            if let Some(i) = cache.iter().position(|(k, _)| *k == id) {
+                let hit = cache.remove(i);
+                let raw = hit.1.clone();
+                cache.push(hit);
+                return Ok(raw);
+            }
+        }
+        let path = self.get(id)?.path.clone();
+        let raw = Arc::new(decode_tiff(&path).map_err(|e| format!("{}: {e}", file_name(&path)))?);
+        let mut cache = lock()?;
+        cache.retain(|(k, _)| *k != id);
+        cache.push((id, raw.clone()));
+        while cache.len() > FULL_RES_CACHE {
+            cache.remove(0);
+        }
+        Ok(raw)
     }
 }
 
@@ -171,6 +199,9 @@ pub async fn remove_images(state: State<'_, AppState>, ids: Vec<u32>) -> Result<
         .images
         .write()
         .map_err(|_| "image store poisoned".to_string())?;
+    if let Ok(mut full) = state.shared.full.lock() {
+        full.retain(|(k, _)| !ids.contains(k));
+    }
     for id in ids {
         images.remove(&id);
     }
@@ -193,6 +224,37 @@ pub async fn render_preview(
         let prep = Prepared::new(&analysis, &adjustments);
         let src = Framed::new(&img.proxy, orientation, crop);
         Ok(Response::new(render_preview_buf(&src, &prep, view)))
+    })
+    .await
+}
+
+/// Render part of the frame at full resolution (100% zoom). `x, y, w, h` are pixels
+/// of the full-resolution frame after orientation and crop. Returns a 16-byte
+/// header (tile width, tile height, full frame width, full frame height; LE u32)
+/// followed by RGBA8.
+#[allow(clippy::too_many_arguments)]
+#[tauri::command]
+pub async fn render_region(
+    state: State<'_, AppState>,
+    id: u32,
+    adjustments: Adjustments,
+    analysis: Analysis,
+    orientation: Orientation,
+    crop: Option<Crop>,
+    view: ViewOptions,
+    x: u32,
+    y: u32,
+    w: u32,
+    h: u32,
+) -> Result<Response, String> {
+    let st = state.inner().clone();
+    blocking(move || {
+        let raw = st.full_res(id)?;
+        let prep = Prepared::new(&analysis, &adjustments);
+        let frame = Framed::new(raw.as_ref(), orientation, crop);
+        let (fw, fh) = (frame.width(), frame.height());
+        let tile = Window::new(&frame, x, y, w, h);
+        Ok(Response::new(render_rgba(&tile, &prep, view, &[tile.width(), tile.height(), fw, fh])))
     })
     .await
 }
