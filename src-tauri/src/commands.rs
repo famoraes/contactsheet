@@ -8,7 +8,7 @@ use std::{
 };
 
 use negative::{
-    analyze, autocrop::auto_crop as detect_crop, decode_tiff, downsample,
+    analyze, analyze_many, autocrop::auto_crop as detect_crop, decode_tiff, downsample,
     export::{encode_jpeg, export_file, ExportSettings},
     metadata::{embed, Metadata, Provenance},
     neutral::{neutralize as neutralize_analysis, sample_density},
@@ -231,6 +231,43 @@ pub async fn recalc(
     blocking(move || {
         let region = if crop.is_some() { CROP_INSET } else { Rect::DEFAULT_INSET };
         Ok(analyze(&Framed::new(&img.proxy, orientation, crop), region))
+    })
+    .await
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RollItem {
+    id: u32,
+    #[serde(default)]
+    orientation: Orientation,
+    #[serde(default)]
+    crop: Option<Crop>,
+}
+
+/// One shared base correction for several frames (a roll): their density
+/// histograms (each over its crop, or the border-skipping inset) are pooled.
+#[tauri::command]
+pub async fn roll_analysis(state: State<'_, AppState>, items: Vec<RollItem>) -> Result<Analysis, String> {
+    let images = items
+        .iter()
+        .map(|it| state.get(it.id))
+        .collect::<Result<Vec<_>, _>>()?;
+    blocking(move || {
+        let views: Vec<Framed<'_, ImageF32>> = images
+            .iter()
+            .zip(&items)
+            .map(|(img, it)| Framed::new(&img.proxy, it.orientation, it.crop))
+            .collect();
+        let frames: Vec<(&Framed<'_, ImageF32>, Rect)> = views
+            .iter()
+            .zip(&items)
+            .map(|(v, it)| (v, if it.crop.is_some() { CROP_INSET } else { Rect::DEFAULT_INSET }))
+            .collect();
+        if frames.is_empty() {
+            return Err("no frames".into());
+        }
+        Ok(analyze_many(&frames))
     })
     .await
 }

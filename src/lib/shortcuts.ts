@@ -45,6 +45,8 @@ export const SHORTCUT_HELP: [string, string][] = [
   ["B", "Before / after (auto conversion)"],
   ["⇧B", "Show negative"],
   ["⌘C / ⌘V", "Copy / paste settings"],
+  ["⇧⌘V", "Paste settings + base correction"],
+  ["⇧R", "Roll base: analyse selected (or all) frames together"],
   ["⌘A", "Select all frames"],
   ["⌘O", "Add images"],
   ["⌘E", "Export"],
@@ -84,7 +86,7 @@ export function handleKeyDown(e: KeyboardEvent, actions: { addImages: () => void
   if (mod) {
     const map: Record<string, () => void> = {
       c: s.copy,
-      v: s.paste,
+      v: e.shiftKey ? s.pasteWithBase : s.paste,
       a: s.selectAll,
       o: actions.addImages,
       e: () => s.frames.length && s.setExportOpen(true),
@@ -157,7 +159,8 @@ export function handleKeyDown(e: KeyboardEvent, actions: { addImages: () => void
           s.flip("vertical");
           break;
         case "r":
-          void s.recalcCurrent();
+          if (e.shiftKey) void s.rollAnalysis();
+          else void s.recalcCurrent();
           break;
         case "n":
           s.toggleNeutralMode();

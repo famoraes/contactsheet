@@ -21,6 +21,8 @@ export interface SavedFrame {
   crop: Crop | null;
   neutralPoints: [number, number][];
   meta: FrameMeta;
+  /** Base correction is shared with other frames (roll analysis / paste). */
+  sharedBase: boolean;
 }
 
 interface RollFile {
@@ -46,6 +48,7 @@ export const pickSaved = (f: SavedFrame): SavedFrame => ({
   crop: f.crop,
   neutralPoints: f.neutralPoints,
   meta: f.meta,
+  sharedBase: f.sharedBase,
 });
 
 const SAVE_DELAY_MS = 600;
@@ -104,6 +107,7 @@ export async function savedFrame(path: string): Promise<SavedFrame | null> {
     crop: s.crop ?? null,
     neutralPoints: s.neutralPoints ?? [],
     meta: { ...EMPTY_META, ...s.meta, archive: s.meta?.archive ?? [] },
+    sharedBase: s.sharedBase ?? false,
   };
 }
 

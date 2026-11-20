@@ -30,7 +30,7 @@ pub mod pipeline;
 pub mod render;
 pub mod synth;
 
-pub use analysis::{analyze, Analysis, Rect};
+pub use analysis::{analyze, analyze_many, Analysis, Rect};
 pub use decode::{decode_tiff, RawImage};
 pub use error::{Error, Result};
 pub use geometry::{Crop, Framed, Orientation, Oriented};

@@ -66,7 +66,7 @@ fn value_of(bin: usize) -> f32 {
     D_MIN + (bin as f32 + 0.5) / BINS as f32 * (D_MAX - D_MIN)
 }
 
-fn percentile(hist: &[u32], total: u64, p: f32) -> f32 {
+fn percentile(hist: &[u64], total: u64, p: f32) -> f32 {
     let target = ((total as f64) * p as f64).ceil().max(1.0) as u64;
     let mut acc = 0u64;
     for (i, &n) in hist.iter().enumerate() {
@@ -84,36 +84,73 @@ pub fn analyze<S: RgbSource>(src: &S, region: Rect) -> Analysis {
 }
 
 pub fn analyze_with<S: RgbSource>(src: &S, region: Rect, low: f32, high: f32) -> Analysis {
-    let width = src.width() as usize;
-    let (x0, y0, x1, y1) = region.to_pixels(src.width(), src.height());
-    let hist = (y0..y1)
-        .into_par_iter()
-        .fold(
-            || vec![0u32; 3 * BINS],
-            |mut h, y| {
-                for x in x0..x1 {
-                    let p = src.rgb(y * width + x);
-                    for c in 0..3 {
-                        h[c * BINS + bin_of(density(p[c]))] += 1;
-                    }
-                }
-                h
-            },
-        )
-        .reduce(
-            || vec![0u32; 3 * BINS],
-            |mut a, b| {
-                a.iter_mut().zip(b).for_each(|(x, y)| *x += y);
-                a
-            },
-        );
-    let total = ((x1 - x0) * (y1 - y0)) as u64;
-    let mut lo = [0f32; 3];
-    let mut hi = [0f32; 3];
-    for c in 0..3 {
-        let ch = &hist[c * BINS..(c + 1) * BINS];
-        lo[c] = percentile(ch, total, low);
-        hi[c] = percentile(ch, total, high).max(lo[c] + MIN_RANGE);
+    let mut h = DensityHistogram::default();
+    h.add(src, region);
+    h.analysis(low, high)
+}
+
+/// Per-channel density histograms that can pool several frames, so a whole roll
+/// can share one base correction.
+#[derive(Clone)]
+pub struct DensityHistogram {
+    bins: Vec<u64>,
+    total: u64,
+}
+
+impl Default for DensityHistogram {
+    fn default() -> Self {
+        DensityHistogram { bins: vec![0; 3 * BINS], total: 0 }
     }
-    Analysis { lo, hi }
+}
+
+impl DensityHistogram {
+    /// Add the pixels of `region` of `src`.
+    pub fn add<S: RgbSource>(&mut self, src: &S, region: Rect) {
+        let width = src.width() as usize;
+        let (x0, y0, x1, y1) = region.to_pixels(src.width(), src.height());
+        let hist = (y0..y1)
+            .into_par_iter()
+            .fold(
+                || vec![0u64; 3 * BINS],
+                |mut h, y| {
+                    for x in x0..x1 {
+                        let p = src.rgb(y * width + x);
+                        for c in 0..3 {
+                            h[c * BINS + bin_of(density(p[c]))] += 1;
+                        }
+                    }
+                    h
+                },
+            )
+            .reduce(
+                || vec![0u64; 3 * BINS],
+                |mut a, b| {
+                    a.iter_mut().zip(b).for_each(|(x, y)| *x += y);
+                    a
+                },
+            );
+        self.bins.iter_mut().zip(hist).for_each(|(x, y)| *x += y);
+        self.total += ((x1 - x0) * (y1 - y0)) as u64;
+    }
+
+    /// Black/white points at the given percentiles of everything added.
+    pub fn analysis(&self, low: f32, high: f32) -> Analysis {
+        let mut lo = [0f32; 3];
+        let mut hi = [0f32; 3];
+        for c in 0..3 {
+            let ch = &self.bins[c * BINS..(c + 1) * BINS];
+            lo[c] = percentile(ch, self.total, low);
+            hi[c] = percentile(ch, self.total, high).max(lo[c] + MIN_RANGE);
+        }
+        Analysis { lo, hi }
+    }
+}
+
+/// One shared analysis for several frames (each with its own region), e.g. a roll.
+pub fn analyze_many<S: RgbSource>(frames: &[(&S, Rect)]) -> Analysis {
+    let mut h = DensityHistogram::default();
+    for (src, region) in frames {
+        h.add(*src, *region);
+    }
+    h.analysis(LOW_PERCENTILE, HIGH_PERCENTILE)
 }

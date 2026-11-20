@@ -43,6 +43,14 @@ export interface Frame extends ImageMeta {
   autoAnalysis: Analysis;
   /** Descriptive metadata (film stock, dates, archive location...). */
   meta: FrameMeta;
+  /** Base correction came from a roll analysis or a paste: crop changes keep it. */
+  sharedBase: boolean;
+}
+
+/** Copied settings; the base correction is only pasted with "Paste + base". */
+interface Clipboard {
+  adjustments: Adjustments;
+  analysis: Analysis;
 }
 
 export interface Histogram {
@@ -56,7 +64,7 @@ interface State {
   currentId: number | null;
   selection: number[];
   anchorId: number | null;
-  clipboard: Adjustments | null;
+  clipboard: Clipboard | null;
   showClipping: boolean;
   /** Show the untouched auto conversion (B). */
   showBefore: boolean;
@@ -105,7 +113,12 @@ interface State {
   resetCurrent: () => void;
   recalcCurrent: () => Promise<void>;
   copy: () => void;
+  /** Paste adjustments (sliders, look, grayscale) to the selected frames. */
   paste: () => void;
+  /** Paste adjustments and the base correction, so the frames match the copied one. */
+  pasteWithBase: () => void;
+  /** Analyse the selected frames (or all shown frames) together: one shared base. */
+  rollAnalysis: () => Promise<void>;
   removeSelection: () => Promise<void>;
   toggleClipping: () => void;
   toggleBefore: () => void;
@@ -193,10 +206,15 @@ export const useStore = create<State>((set, get) => {
     if (!f) return;
     try {
       const analysis = await api.recalc(id, f.orientation, f.crop);
-      updateFrame(id, (x) => ({ ...x, analysis, autoAnalysis: analysis, neutralPoints: [] }));
+      updateFrame(id, (x) => ({ ...x, analysis, autoAnalysis: analysis, neutralPoints: [], sharedBase: false }));
     } catch (e) {
       fail(e);
     }
+  };
+
+  /** After a crop change: re-analyse, unless the frame uses a shared base. */
+  const recalcAfterCrop = async (id: number) => {
+    if (!get().frames.find((x) => x.id === id)?.sharedBase) await recalcFrame(id);
   };
 
   const setCurrentCrop = (crop: Crop) => updateCurrent((f) => ({ ...f, crop }));
@@ -252,6 +270,7 @@ export const useStore = create<State>((set, get) => {
               neutralPoints: [],
               autoAnalysis: meta.analysis,
               meta: { ...EMPTY_META, creator: prefs.creator, copyright: prefs.copyright },
+              sharedBase: false,
               // Edits and metadata from the folder's roll file win.
               ...(saved ?? {}),
             };
@@ -404,7 +423,7 @@ export const useStore = create<State>((set, get) => {
       set({ cropMode: false, cropBackup: null });
       updateFrame(f.id, (x) => ({ ...x, crop }));
       // A new crop changes what the auto analysis should look at (e.g. border removed).
-      if (!sameCrop(crop, cropBackup)) await recalcFrame(f.id);
+      if (!sameCrop(crop, cropBackup)) await recalcAfterCrop(f.id);
     },
 
     cancelCrop() {
@@ -448,7 +467,7 @@ export const useStore = create<State>((set, get) => {
         updateFrame(f.id, (x) => ({ ...x, crop: { ...FULL_CROP } }));
       } else if (f.crop) {
         updateFrame(f.id, (x) => ({ ...x, crop: null }));
-        void recalcFrame(f.id);
+        void recalcAfterCrop(f.id);
       }
     },
 
@@ -480,7 +499,7 @@ export const useStore = create<State>((set, get) => {
             if (!found) misses.push(x.name);
             if (sameCrop(crop, x.crop)) return;
             updateFrame(id, (y) => ({ ...y, crop }));
-            await recalcFrame(id);
+            await recalcAfterCrop(id);
           } catch (e) {
             fail(e);
           }
@@ -505,13 +524,48 @@ export const useStore = create<State>((set, get) => {
 
     copy() {
       const f = current();
-      if (f) set({ clipboard: { ...f.adjustments } });
+      if (f) set({ clipboard: { adjustments: { ...f.adjustments }, analysis: f.analysis } });
     },
 
     paste() {
       const { clipboard } = get();
       if (!clipboard) return;
-      updateTargets((f) => ({ ...f, adjustments: { ...clipboard } }));
+      updateTargets((f) => ({ ...f, adjustments: { ...clipboard.adjustments } }));
+    },
+
+    pasteWithBase() {
+      const { clipboard } = get();
+      if (!clipboard) return;
+      // The copied frame's corrected base (including any neutral pick) becomes the
+      // targets' automatic base, so Reset and Before keep it.
+      updateTargets((f) => ({
+        ...f,
+        adjustments: { ...clipboard.adjustments },
+        analysis: clipboard.analysis,
+        autoAnalysis: clipboard.analysis,
+        neutralPoints: [],
+        sharedBase: true,
+      }));
+    },
+
+    async rollAnalysis() {
+      const { selection } = get();
+      const ids = new Set(selection.length > 1 ? selection : visible().map((f) => f.id));
+      const frames = get().frames.filter((f) => ids.has(f.id));
+      if (!frames.length) return;
+      leaveModes();
+      try {
+        const analysis = await api.rollAnalysis(
+          frames.map((f) => ({ id: f.id, orientation: f.orientation, crop: f.crop })),
+        );
+        set((s) => ({
+          frames: s.frames.map((f) =>
+            ids.has(f.id) ? { ...f, analysis, autoAnalysis: analysis, neutralPoints: [], sharedBase: true } : f,
+          ),
+        }));
+      } catch (e) {
+        fail(e);
+      }
     },
 
     async removeSelection() {

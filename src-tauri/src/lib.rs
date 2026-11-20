@@ -14,6 +14,7 @@ pub fn run() {
             commands::render_thumbnail,
             commands::recalc,
             commands::auto_crop,
+            commands::roll_analysis,
             commands::neutralize,
             commands::export_images,
             commands::read_roll,

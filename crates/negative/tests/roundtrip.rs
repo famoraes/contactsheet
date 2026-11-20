@@ -193,3 +193,19 @@ fn export_embeds_metadata() {
 
     std::fs::remove_dir_all(&dir).ok();
 }
+
+#[test]
+fn roll_analysis_pools_frames() {
+    use negative::analyze_many;
+    let a = neutral_ramp(400);
+    // Same scene, one stop "thinner" negative (less exposure -> lower density).
+    let thin = ImageF32 { data: a.data.iter().map(|v| (v * 2.0).min(1.0)).collect(), ..a.clone() };
+    let one = analyze(&a, Rect::FULL);
+    assert_eq!(analyze_many(&[(&a, Rect::FULL)]), one, "a roll of one is the frame's own analysis");
+    let roll = analyze_many(&[(&a, Rect::FULL), (&thin, Rect::FULL)]);
+    let t = analyze(&thin, Rect::FULL);
+    for c in 0..3 {
+        // The shared range spans both frames.
+        assert!(roll.lo[c] <= one.lo[c].min(t.lo[c]) + 0.01 && roll.hi[c] >= one.hi[c].max(t.hi[c]) - 0.01);
+    }
+}

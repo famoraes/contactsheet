@@ -152,6 +152,19 @@ export function RightPanel() {
                 Recalc <kbd>R</kbd>
               </button>
             </div>
+            <div className="btn-row btn-row-top">
+              <button
+                className={`btn${frame?.sharedBase ? " btn-toggle is-on" : ""}`}
+                disabled={disabled}
+                onClick={() => void s.rollAnalysis()}
+                title="Analyse frames together so they share one base correction and match in color (⇧R). Uses the selected frames, or all frames when only one is selected."
+              >
+                Roll base {selectionCount > 1 ? `→ ${selectionCount}` : "(all)"}
+              </button>
+            </div>
+            {frame?.sharedBase && !neutralMode && (
+              <p className="panel-hint">Shared base correction. Recalc gives this frame its own again.</p>
+            )}
             {neutralMode && (
               <p className="panel-hint">
                 Click a gray. <b>⇧-click</b> a second gray in another tone to fix shadow/highlight casts too.
@@ -245,6 +258,16 @@ export function RightPanel() {
               </button>
               <button className="btn" disabled={disabled} onClick={s.resetCurrent} title="Reset to automatic conversion">
                 Reset
+              </button>
+            </div>
+            <div className="btn-row btn-row-top">
+              <button
+                className="btn"
+                disabled={disabled || !hasClipboard}
+                onClick={s.pasteWithBase}
+                title="Paste settings and the copied frame's base correction, so the frames match it (⇧⌘V)"
+              >
+                Paste + base{selectionCount > 1 ? ` → ${selectionCount}` : ""} <kbd>⇧⌘V</kbd>
               </button>
             </div>
           </section>
