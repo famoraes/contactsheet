@@ -36,6 +36,7 @@ export const SHORTCUT_HELP: [string, string][] = [
   ["[ / ]", "Rotate left / right"],
   ["H / V", "Flip horizontal / vertical"],
   ["G", "Color / grayscale"],
+  ["L", "Look: normal / flat"],
   ["N", "Neutral picker (⇧-click: 2nd point)"],
   ["R", "Recalc"],
   ["I", "Adjust / Info panel"],
@@ -135,6 +136,11 @@ export function handleKeyDown(e: KeyboardEvent, actions: { addImages: () => void
         case "g":
           s.toggleGrayscale();
           break;
+        case "l": {
+          const f = s.frames.find((x) => x.id === s.currentId);
+          if (f) s.setLook(f.adjustments.look === "flat" ? "normal" : "flat");
+          break;
+        }
         case "i":
           s.setPanelTab(s.panelTab === "info" ? "adjust" : "info");
           break;

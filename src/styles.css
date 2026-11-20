@@ -924,3 +924,21 @@ kbd {
   color: var(--text-dim);
   font-variant-numeric: tabular-nums;
 }
+
+.panel-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.panel-head h3 {
+  margin: 0;
+}
+.segmented-small {
+  padding: 1px;
+}
+.segmented-small button {
+  height: 20px;
+  padding: 0 10px;
+  font-size: 11px;
+}

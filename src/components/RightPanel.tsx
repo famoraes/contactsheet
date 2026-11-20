@@ -60,7 +60,27 @@ export function RightPanel() {
           </section>
 
           <section className="panel-section">
-            <h3>Tone</h3>
+            <div className="panel-head">
+              <h3>Tone</h3>
+              <div className="segmented segmented-small" title="Paper look (L)">
+                <button
+                  className={adj?.look !== "flat" ? "is-on" : ""}
+                  disabled={disabled}
+                  onClick={() => s.setLook("normal")}
+                  title="Punchy, with open shadows"
+                >
+                  Normal
+                </button>
+                <button
+                  className={adj?.look === "flat" ? "is-on" : ""}
+                  disabled={disabled}
+                  onClick={() => s.setLook("flat")}
+                  title="Lower contrast, more shadow detail: a base for editing elsewhere"
+                >
+                  Flat
+                </button>
+              </div>
+            </div>
             <Slider
               label="Density"
               shortcut="Q/A"

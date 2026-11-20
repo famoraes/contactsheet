@@ -106,7 +106,7 @@ export function Viewer() {
     if (!frame) return;
     pending.current = {
       id: frame.id,
-      adjustments: before ? { ...DEFAULT_ADJUSTMENTS, grayscale: frame.adjustments.grayscale } : frame.adjustments,
+      adjustments: before ? { ...DEFAULT_ADJUSTMENTS, grayscale: frame.adjustments.grayscale, look: frame.adjustments.look } : frame.adjustments,
       analysis: before ? frame.autoAnalysis : frame.analysis,
       orientation: frame.orientation,
       crop: renderCrop,

@@ -20,6 +20,26 @@ pub struct Adjustments {
     pub yellow: f32,
     /// True monochrome output.
     pub grayscale: bool,
+    /// Paper preset.
+    pub look: LookPreset,
+}
+
+/// Named [`Look`]s selectable per frame.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum LookPreset {
+    #[default]
+    Normal,
+    Flat,
+}
+
+impl LookPreset {
+    pub fn look(self) -> Look {
+        match self {
+            LookPreset::Normal => Look::NORMAL,
+            LookPreset::Flat => Look::FLAT,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -82,8 +102,9 @@ pub struct Prepared {
 }
 
 impl Prepared {
+    /// Uses the frame's look preset (`adj.look`).
     pub fn new(an: &Analysis, adj: &Adjustments) -> Self {
-        Self::with_look(an, adj, &Look::default())
+        Self::with_look(an, adj, &adj.look.look())
     }
 
     pub fn with_look(an: &Analysis, adj: &Adjustments, look: &Look) -> Self {
@@ -167,4 +188,21 @@ pub fn srgb_encode(l: f32) -> f32 {
 #[inline]
 fn paper(y: f32, s: f32) -> f32 {
     (y + s * y * (1.0 - y) * (2.0 * y - 1.0)).clamp(0.0, 1.0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn look_preset_reaches_rendering() {
+        let an = Analysis { lo: [0.2; 3], hi: [1.4; 3] };
+        let normal = Adjustments::default();
+        let flat = Adjustments { look: LookPreset::Flat, ..normal };
+        // A deep shadow (low-density negative) renders lighter with the flat look.
+        let shadow = [10f32.powf(-0.35); 3];
+        let n = Prepared::new(&an, &normal).apply(shadow).0[0];
+        let f = Prepared::new(&an, &flat).apply(shadow).0[0];
+        assert!(f > n + 0.01, "flat {f} vs normal {n}");
+    }
 }

@@ -10,7 +10,11 @@ export interface Adjustments {
   magenta: number;
   yellow: number;
   grayscale: boolean;
+  /** Paper preset: normal (punchy, open shadows) or flat (a base for further editing). */
+  look: LookPreset;
 }
+
+export type LookPreset = "normal" | "flat";
 
 export interface Analysis {
   lo: Rgb;
@@ -87,6 +91,7 @@ export const DEFAULT_ADJUSTMENTS: Adjustments = {
   magenta: 0,
   yellow: 0,
   grayscale: false,
+  look: "normal",
 };
 
 export type SliderKey = "density" | "contrast" | "saturation" | "cyan" | "magenta" | "yellow";

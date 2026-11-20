@@ -35,4 +35,4 @@ pub use decode::{decode_tiff, RawImage};
 pub use error::{Error, Result};
 pub use geometry::{Crop, Framed, Orientation, Oriented};
 pub use image::{downsample, ImageF32, RgbSource};
-pub use pipeline::{Adjustments, Look, Prepared, ViewOptions};
+pub use pipeline::{Adjustments, Look, LookPreset, Prepared, ViewOptions};

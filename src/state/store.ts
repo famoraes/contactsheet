@@ -24,6 +24,7 @@ import {
   type Crop,
   type ExportProgress,
   type FrameMeta,
+  type LookPreset,
   type ImageMeta,
   type MetaKey,
   type Orientation,
@@ -87,6 +88,7 @@ interface State {
   setAdjustment: (key: SliderKey, value: number) => void;
   nudge: (key: SliderKey, delta: number) => void;
   toggleGrayscale: () => void;
+  setLook: (look: LookPreset) => void;
   toggleNeutralMode: (on?: boolean) => void;
   pickNeutral: (u: number, v: number, addSecond: boolean) => Promise<void>;
   rotate: (quarterTurnsCw: number) => void;
@@ -322,6 +324,10 @@ export const useStore = create<State>((set, get) => {
         ...f,
         adjustments: { ...f.adjustments, grayscale: !f.adjustments.grayscale },
       }));
+    },
+
+    setLook(look) {
+      updateCurrent((f) => ({ ...f, adjustments: { ...f.adjustments, look } }));
     },
 
     toggleNeutralMode(on) {
