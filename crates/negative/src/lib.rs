@@ -25,6 +25,7 @@ pub mod export;
 pub mod geometry;
 pub mod icc;
 pub mod image;
+pub mod ir;
 pub mod metadata;
 pub mod neutral;
 pub mod pipeline;

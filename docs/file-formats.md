@@ -8,6 +8,8 @@
   or linear output mode (often labelled "raw", "linear" or "HDR"). Gamma-corrected
   scans still convert, but the tones and colours are less accurate.
 - The TIFF orientation tag is honoured.
+- An **infrared channel**, stored as a fourth channel or as a separate
+  full-size grey page, enables [dust and scratch removal](dust-removal.md).
 - Scan with a little border around the frame or without, as you prefer:
   [AutoCrop](crop.md#autocrop) removes it, and the automatic analysis ignores
   the outer 8% until you crop.

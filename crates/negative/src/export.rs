@@ -163,6 +163,22 @@ pub fn export_file(
     embed: Option<&Embed>,
 ) -> Result<Vec<PathBuf>> {
     let raw = decode_image(input)?;
+    export_source(&raw, input, analysis, adjustments, orientation, crop, settings, embed)
+}
+
+/// Write the positive(s) of an already decoded (and possibly cleaned) full-resolution
+/// scan; `input` names the output files.
+#[allow(clippy::too_many_arguments)]
+pub fn export_source<S: RgbSource>(
+    raw: &S,
+    input: &Path,
+    analysis: &Analysis,
+    adjustments: &Adjustments,
+    orientation: Orientation,
+    crop: Option<Crop>,
+    settings: &ExportSettings,
+    embed: Option<&Embed>,
+) -> Result<Vec<PathBuf>> {
     let prep = Prepared::new(analysis, adjustments);
     let stem = format!(
         "{}_positive",
@@ -173,7 +189,7 @@ pub fn export_file(
     );
     std::fs::create_dir_all(&settings.out_dir)?;
     // Geometry first, then resize, so the size limit applies to the final frame.
-    let framed = Framed::new(&raw, orientation, crop);
+    let framed = Framed::new(raw, orientation, crop);
     match settings.max_size.and_then(|m| resize_to(&framed, m)) {
         Some(small) => write_outputs(&small, &prep, &stem, settings, embed),
         None => write_outputs(&framed, &prep, &stem, settings, embed),

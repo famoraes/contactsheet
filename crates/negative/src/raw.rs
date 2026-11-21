@@ -67,6 +67,7 @@ pub fn decode_raw(path: &Path) -> Result<RawImage> {
         bit_depth,
         samples: Samples::U16(samples),
         orientation,
+        ir: None,
     })
 }
 

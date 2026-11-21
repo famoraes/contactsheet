@@ -9,7 +9,9 @@ use std::{
 
 use negative::{
     analyze, analyze_many, autocrop::auto_crop as detect_crop, decode_image, downsample,
-    export::{encode_jpeg, export_file, ExportSettings},
+    decode::Samples,
+    export::{encode_jpeg, export_file, export_source, ExportSettings},
+    ir::{attenuation, clean, clean_image, estimate_alignment, DustParams, IrAlignment, IrPlane},
     metadata::{embed, Metadata, Provenance},
     neutral::{neutralize as neutralize_analysis, sample_density},
     render::{render_preview as render_preview_buf, render_rgb8, render_rgba},
@@ -28,18 +30,116 @@ const CROP_INSET: Rect = Rect { x: 0.01, y: 0.01, w: 0.98, h: 0.98 };
 
 struct LoadedImage {
     path: PathBuf,
-    proxy: ImageF32,
+    proxy: Arc<ImageF32>,
     thumb: ImageF32,
+    ir: Option<IrInfo>,
+    /// Dust-cleaned proxy for the last strength used.
+    cleaned: Mutex<Option<(u32, Arc<ImageF32>)>>,
 }
 
-/// Decoded full-resolution scans kept for 100% zoom (most recent last).
+/// What dust removal needs, computed once when a scan with IR is loaded.
+struct IrInfo {
+    /// IR-to-RGB alignment at full resolution.
+    align: IrAlignment,
+    /// Attenuation (1 = clean) at proxy resolution; independent of strength.
+    proxy_atten: Vec<f32>,
+    /// Proxy downsampling factor.
+    factor: usize,
+}
+
+/// Cache key for a dust setting (None = off).
+fn dust_key(dust: Option<DustParams>) -> Option<u32> {
+    dust.map(|d| (d.strength.clamp(0.0, 1.0) * 1000.0).round() as u32)
+}
+
+impl LoadedImage {
+    /// The proxy to render and analyse: dust-cleaned when requested and possible.
+    fn source(&self, dust: Option<DustParams>) -> Arc<ImageF32> {
+        let (Some(params), Some(ir)) = (dust, &self.ir) else {
+            return self.proxy.clone();
+        };
+        let key = dust_key(Some(params)).unwrap_or_default();
+        if let Ok(mut c) = self.cleaned.lock() {
+            if let Some((k, img)) = c.as_ref() {
+                if *k == key {
+                    return img.clone();
+                }
+            }
+            let img = Arc::new(clean(self.proxy.as_ref(), &ir.proxy_atten, params, 1.0 / ir.factor as f32));
+            *c = Some((key, img.clone()));
+            return img;
+        }
+        self.proxy.clone()
+    }
+}
+
+/// Decoded full-resolution scans kept for 100% zoom (most recent last), keyed by
+/// image id and dust setting.
 const FULL_RES_CACHE: usize = 2;
+
+type FullKey = (u32, Option<u32>);
 
 #[derive(Default)]
 struct Shared {
     images: RwLock<HashMap<u32, Arc<LoadedImage>>>,
     next_id: AtomicU32,
-    full: Mutex<Vec<(u32, Arc<RawImage>)>>,
+    full: Mutex<Vec<(FullKey, Arc<RawImage>)>>,
+}
+
+/// A cleaned full-resolution image as a 16-bit `RawImage` (half the memory of f32).
+fn to_raw_u16(img: ImageF32, orientation: Orientation, bit_depth: u8) -> RawImage {
+    let samples = img.data.iter().map(|v| (v.clamp(0.0, 1.0) * 65535.0 + 0.5) as u16).collect();
+    RawImage { width: img.width, height: img.height, channels: 3, bit_depth, samples: Samples::U16(samples), orientation, ir: None }
+}
+
+/// Decode a scan and, when requested and possible, remove dust at full resolution.
+fn decode_full(path: &Path, info: Option<&IrInfo>, dust: Option<DustParams>) -> Result<RawImage, String> {
+    let raw = decode_image(path).map_err(|e| format!("{}: {e}", file_name(path)))?;
+    match (dust, info, raw.ir.as_ref()) {
+        (Some(params), Some(info), Some(ir)) => {
+            let cleaned = clean_image(&raw, ir, &info.align, params, 1);
+            Ok(to_raw_u16(cleaned, raw.orientation, raw.bit_depth))
+        }
+        _ => Ok(raw),
+    }
+}
+
+/// Grey view of an attenuation map, so it can be framed like the image.
+struct MaskSource<'a> {
+    width: u32,
+    height: u32,
+    data: &'a [f32],
+}
+
+impl RgbSource for MaskSource<'_> {
+    fn width(&self) -> u32 {
+        self.width
+    }
+    fn height(&self) -> u32 {
+        self.height
+    }
+    fn rgb(&self, i: usize) -> [f32; 3] {
+        [self.data[i]; 3]
+    }
+}
+
+/// Tint pixels that dust removal treats (preview buffer: 8-byte header + RGBA).
+fn tint_defects(buf: &mut [u8], img: &LoadedImage, orientation: Orientation, crop: Option<Crop>, dust: DustParams) {
+    let Some(ir) = &img.ir else { return };
+    let mask = MaskSource { width: img.proxy.width, height: img.proxy.height, data: &ir.proxy_atten };
+    let framed = Framed::new(&mask, orientation, crop);
+    let t = dust.threshold();
+    let n = (framed.width() * framed.height()) as usize;
+    for i in 0..n {
+        let d = 1.0 - framed.rgb(i)[0];
+        if d > t {
+            let k = (0.45 + d).min(0.9);
+            let px = &mut buf[8 + i * 4..8 + i * 4 + 3];
+            for (c, target) in px.iter_mut().zip([255.0f32, 70.0, 20.0]) {
+                *c = (*c as f32 * (1.0 - k) + target * k) as u8;
+            }
+        }
+    }
 }
 
 #[derive(Default, Clone)]
@@ -58,23 +158,26 @@ impl AppState {
             .ok_or_else(|| format!("unknown image id {id}"))
     }
 
-    /// The full-resolution scan, decoded on first use and kept in a small LRU.
-    fn full_res(&self, id: u32) -> Result<Arc<RawImage>, String> {
+    /// The full-resolution scan (dust-cleaned when requested), decoded on first use
+    /// and kept in a small LRU.
+    fn full_res(&self, id: u32, dust: Option<DustParams>) -> Result<Arc<RawImage>, String> {
+        let img = self.get(id)?;
+        let dust = dust.filter(|_| img.ir.is_some());
+        let key: FullKey = (id, dust_key(dust));
         let lock = || self.shared.full.lock().map_err(|_| "cache poisoned".to_string());
         {
             let mut cache = lock()?;
-            if let Some(i) = cache.iter().position(|(k, _)| *k == id) {
+            if let Some(i) = cache.iter().position(|(k, _)| *k == key) {
                 let hit = cache.remove(i);
                 let raw = hit.1.clone();
                 cache.push(hit);
                 return Ok(raw);
             }
         }
-        let path = self.get(id)?.path.clone();
-        let raw = Arc::new(decode_image(&path).map_err(|e| format!("{}: {e}", file_name(&path)))?);
+        let raw = Arc::new(decode_full(&img.path, img.ir.as_ref(), dust)?);
         let mut cache = lock()?;
-        cache.retain(|(k, _)| *k != id);
-        cache.push((id, raw.clone()));
+        cache.retain(|(k, _)| k.0 != id);
+        cache.push((key, raw.clone()));
         while cache.len() > FULL_RES_CACHE {
             cache.remove(0);
         }
@@ -94,6 +197,8 @@ pub struct ImageMeta {
     analysis: Analysis,
     /// Initial orientation from the file's TIFF Orientation tag.
     orientation: Orientation,
+    /// The scan has an infrared channel (dust removal available).
+    has_ir: bool,
 }
 
 #[derive(Deserialize)]
@@ -109,6 +214,9 @@ pub struct ExportItem {
     /// Descriptive metadata to embed; `None` writes none.
     #[serde(default)]
     metadata: Option<Metadata>,
+    /// IR dust removal; `None` = off.
+    #[serde(default)]
+    dust: Option<DustParams>,
 }
 
 #[derive(Deserialize)]
@@ -168,9 +276,22 @@ pub async fn add_image(
         let (width, height, bit_depth, orientation) =
             (raw.width, raw.height, raw.bit_depth, raw.orientation);
         let proxy = downsample(&raw, PROXY_LONG);
+        // Dust removal: align the IR once at full resolution, keep a proxy-size map.
+        let ir = raw.ir.as_ref().map(|plane: &IrPlane| {
+            let align = estimate_alignment(&raw, plane);
+            let factor = (width.max(height) as usize).div_ceil(PROXY_LONG as usize).max(1);
+            let proxy_atten = attenuation(&plane.downsample(factor), &align.scaled(factor), proxy.width, proxy.height);
+            IrInfo { align, proxy_atten, factor }
+        });
         drop(raw);
-        let thumb = downsample(&proxy, THUMB_LONG);
-        let analysis = analyze(&proxy, Rect::DEFAULT_INSET);
+        let loaded = LoadedImage { path: path.clone(), proxy: Arc::new(proxy), thumb: ImageF32 { width: 0, height: 0, data: vec![] }, ir, cleaned: Mutex::new(None) };
+        // Dust removal is on by default for IR scans, so analyse (and thumbnail) the
+        // cleaned image: dust would otherwise skew the white point.
+        let source = loaded.source(loaded.ir.as_ref().map(|_| DustParams::default()));
+        let thumb = downsample(source.as_ref(), THUMB_LONG);
+        let analysis = analyze(source.as_ref(), Rect::DEFAULT_INSET);
+        let has_ir = loaded.ir.is_some();
+        let loaded = LoadedImage { thumb, ..loaded };
         let id = st.shared.next_id.fetch_add(1, Ordering::Relaxed) + 1;
         let meta = ImageMeta {
             id,
@@ -181,12 +302,13 @@ pub async fn add_image(
             bit_depth,
             analysis,
             orientation,
+            has_ir,
         };
         st.shared
             .images
             .write()
             .map_err(|_| "image store poisoned".to_string())?
-            .insert(id, Arc::new(LoadedImage { path, proxy, thumb }));
+            .insert(id, Arc::new(loaded));
         Ok(meta)
     })
     .await
@@ -200,7 +322,7 @@ pub async fn remove_images(state: State<'_, AppState>, ids: Vec<u32>) -> Result<
         .write()
         .map_err(|_| "image store poisoned".to_string())?;
     if let Ok(mut full) = state.shared.full.lock() {
-        full.retain(|(k, _)| !ids.contains(k));
+        full.retain(|(k, _)| !ids.contains(&k.0));
     }
     for id in ids {
         images.remove(&id);
@@ -209,6 +331,7 @@ pub async fn remove_images(state: State<'_, AppState>, ids: Vec<u32>) -> Result<
 }
 
 /// Render the preview proxy. Returns an 8-byte header (width, height LE u32) + RGBA8.
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub async fn render_preview(
     state: State<'_, AppState>,
@@ -218,12 +341,18 @@ pub async fn render_preview(
     orientation: Orientation,
     crop: Option<Crop>,
     view: ViewOptions,
+    dust: Option<DustParams>,
 ) -> Result<Response, String> {
     let img = state.get(id)?;
     blocking(move || {
         let prep = Prepared::new(&analysis, &adjustments);
-        let src = Framed::new(&img.proxy, orientation, crop);
-        Ok(Response::new(render_preview_buf(&src, &prep, view)))
+        let source = img.source(dust);
+        let src = Framed::new(source.as_ref(), orientation, crop);
+        let mut buf = render_preview_buf(&src, &prep, view);
+        if view.show_defects {
+            tint_defects(&mut buf, &img, orientation, crop, dust.unwrap_or_default());
+        }
+        Ok(Response::new(buf))
     })
     .await
 }
@@ -246,10 +375,11 @@ pub async fn render_region(
     y: u32,
     w: u32,
     h: u32,
+    dust: Option<DustParams>,
 ) -> Result<Response, String> {
     let st = state.inner().clone();
     blocking(move || {
-        let raw = st.full_res(id)?;
+        let raw = st.full_res(id, dust)?;
         let prep = Prepared::new(&analysis, &adjustments);
         let frame = Framed::new(raw.as_ref(), orientation, crop);
         let (fw, fh) = (frame.width(), frame.height());
@@ -288,11 +418,13 @@ pub async fn recalc(
     id: u32,
     orientation: Orientation,
     crop: Option<Crop>,
+    dust: Option<DustParams>,
 ) -> Result<Analysis, String> {
     let img = state.get(id)?;
     blocking(move || {
         let region = if crop.is_some() { CROP_INSET } else { Rect::DEFAULT_INSET };
-        Ok(analyze(&Framed::new(&img.proxy, orientation, crop), region))
+        let source = img.source(dust);
+        Ok(analyze(&Framed::new(source.as_ref(), orientation, crop), region))
     })
     .await
 }
@@ -305,6 +437,8 @@ pub struct RollItem {
     orientation: Orientation,
     #[serde(default)]
     crop: Option<Crop>,
+    #[serde(default)]
+    dust: Option<DustParams>,
 }
 
 /// One shared base correction for several frames (a roll): their density
@@ -316,10 +450,11 @@ pub async fn roll_analysis(state: State<'_, AppState>, items: Vec<RollItem>) -> 
         .map(|it| state.get(it.id))
         .collect::<Result<Vec<_>, _>>()?;
     blocking(move || {
-        let views: Vec<Framed<'_, ImageF32>> = images
+        let sources: Vec<Arc<ImageF32>> = images.iter().zip(&items).map(|(img, it)| img.source(it.dust)).collect();
+        let views: Vec<Framed<'_, ImageF32>> = sources
             .iter()
             .zip(&items)
-            .map(|(img, it)| Framed::new(&img.proxy, it.orientation, it.crop))
+            .map(|(src, it)| Framed::new(src.as_ref(), it.orientation, it.crop))
             .collect();
         let frames: Vec<(&Framed<'_, ImageF32>, Rect)> = views
             .iter()
@@ -343,7 +478,7 @@ pub async fn auto_crop(
     orientation: Orientation,
 ) -> Result<Option<Crop>, String> {
     let img = state.get(id)?;
-    blocking(move || Ok(detect_crop(&negative::Oriented::new(&img.proxy, orientation)))).await
+    blocking(move || Ok(detect_crop(&negative::Oriented::new(img.proxy.as_ref(), orientation)))).await
 }
 
 /// Make the picked points neutral. `points` are normalized display coordinates
@@ -358,10 +493,12 @@ pub async fn neutralize(
     orientation: Orientation,
     crop: Option<Crop>,
     analysis: Analysis,
+    dust: Option<DustParams>,
 ) -> Result<Analysis, String> {
     let img = state.get(id)?;
     blocking(move || {
-        let p = &img.proxy;
+        let source = img.source(dust);
+        let p = source.as_ref();
         let radius = (p.width.max(p.height) / 300).max(2) as usize;
         let view = Framed::new(p, orientation, crop);
         let samples: Vec<[f32; 3]> = points
@@ -386,7 +523,7 @@ pub async fn export_images(
     }
     let jobs = items
         .into_iter()
-        .map(|it| state.get(it.id).map(|img| (img.path.clone(), it)))
+        .map(|it| state.get(it.id).map(|img| (img.path.clone(), img, it)))
         .collect::<Result<Vec<_>, _>>()?;
     let settings = ExportSettings {
         out_dir: PathBuf::from(&options.out_dir),
@@ -400,7 +537,7 @@ pub async fn export_images(
             written: Vec::new(),
             errors: Vec::new(),
         };
-        for (i, (path, item)) in jobs.into_iter().enumerate() {
+        for (i, (path, img, item)) in jobs.into_iter().enumerate() {
             let name = file_name(&path);
             let embedded = item.metadata.as_ref().map(|m| {
                 let settings_json = serde_json::json!({
@@ -412,15 +549,16 @@ pub async fn export_images(
                 .to_string();
                 embed(m, &Provenance { source: path.display().to_string(), settings_json })
             });
-            let error = match export_file(
-                &path,
-                &item.analysis,
-                &item.adjustments,
-                item.orientation,
-                item.crop,
-                &settings,
-                embedded.as_ref(),
-            ) {
+            let result = match (item.dust, &img.ir) {
+                // Dust removal: decode, clean at full resolution, then export.
+                (Some(params), Some(_)) => decode_full(&path, img.ir.as_ref(), Some(params))
+                    .map_err(negative::Error::msg)
+                    .and_then(|raw| {
+                        export_source(&raw, &path, &item.analysis, &item.adjustments, item.orientation, item.crop, &settings, embedded.as_ref())
+                    }),
+                _ => export_file(&path, &item.analysis, &item.adjustments, item.orientation, item.crop, &settings, embedded.as_ref()),
+            };
+            let error = match result {
                 Ok(files) => {
                     summary
                         .written

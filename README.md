@@ -10,6 +10,7 @@ scans (RAW / DNG), built roll by roll.
 - **Automatic conversion** that removes the orange mask and per-layer differences, with Density, Contrast, Saturation and C/M/Y filtration, Normal / Flat looks, and a one- or two-point neutral picker for colour and crossover casts
 - **Roll workflow**: shared base correction across a roll, copy/paste settings with or without the base
 - **Crop and straighten**, **AutoCrop** (frame edge and tilt detection), rotate and flip
+- **Dust and scratch removal** from the scan's infrared channel, with grain-preserving repair
 - **100% zoom** with panning, before/after, clipping view, histogram, image-only mode
 - **Metadata**: film stock, date, location, archive location, keywords. Searchable and filterable, and embedded on export as standard XMP / IPTC metadata that photo management apps read
 - **Autosave** to a `roll.contactsheet` file next to the scans

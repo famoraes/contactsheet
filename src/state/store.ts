@@ -18,11 +18,14 @@ import { DEFAULT_ARCHIVE_LEVELS, EMPTY_FILTER, isFilterActive, matchesFilter, ty
 import { markLoaded, pickSaved, savedFrame, scheduleSave, setRollErrorHandler } from "../lib/roll";
 import {
   DEFAULT_ADJUSTMENTS,
+  DEFAULT_DUST,
   DEFAULT_ORIENTATION,
   EMPTY_META,
   type Adjustments,
   type Analysis,
   type Crop,
+  type Dust,
+  type DustParams,
   type ExportProgress,
   type FrameMeta,
   type LookPreset,
@@ -46,12 +49,19 @@ export interface Frame extends ImageMeta {
   meta: FrameMeta;
   /** Base correction came from a roll analysis or a paste: crop changes keep it. */
   sharedBase: boolean;
+  /** IR dust removal (only used when the scan has an IR channel). */
+  dust: Dust;
 }
+
+/** What to send to Rust for a frame's dust removal: settings when it applies, else null. */
+export const dustParams = (f: Frame): DustParams =>
+  f.hasIr && f.dust.enabled ? { strength: f.dust.strength } : null;
 
 /** Copied settings; the base correction is only pasted with "Paste + base". */
 interface Clipboard {
   adjustments: Adjustments;
   analysis: Analysis;
+  dust: Dust;
 }
 
 export interface Histogram {
@@ -71,6 +81,8 @@ interface State {
   showBefore: boolean;
   /** Show the raw negative (⇧B). */
   showNegative: boolean;
+  /** Tint what IR dust removal treats. */
+  showDefects: boolean;
   neutralMode: boolean;
   cropMode: boolean;
   /** Crop when crop mode was entered, for Cancel. */
@@ -133,6 +145,9 @@ interface State {
   toggleClipping: () => void;
   toggleBefore: () => void;
   toggleNegative: () => void;
+  toggleDefects: () => void;
+  /** Change the current frame's dust removal. */
+  setDust: (patch: Partial<Dust>) => void;
   setHistogram: (h: Histogram | null) => void;
   setExportOpen: (open: boolean) => void;
   setExportProgress: (p: ExportProgress | null) => void;
@@ -230,7 +245,7 @@ export const useStore = create<State>((set, get) => {
     const f = get().frames.find((x) => x.id === id);
     if (!f) return;
     try {
-      const analysis = await api.recalc(id, f.orientation, f.crop);
+      const analysis = await api.recalc(id, f.orientation, f.crop, dustParams(f));
       updateFrame(id, (x) => ({ ...x, analysis, autoAnalysis: analysis, neutralPoints: [], sharedBase: false }));
     } catch (e) {
       fail(e);
@@ -258,6 +273,7 @@ export const useStore = create<State>((set, get) => {
     showClipping: false,
     showBefore: false,
     showNegative: false,
+    showDefects: false,
     neutralMode: false,
     cropMode: false,
     cropBackup: null,
@@ -301,6 +317,7 @@ export const useStore = create<State>((set, get) => {
               autoAnalysis: meta.analysis,
               meta: { ...EMPTY_META, creator: prefs.creator, copyright: prefs.copyright },
               sharedBase: false,
+              dust: { ...DEFAULT_DUST, enabled: meta.hasIr },
               // Edits and metadata from the folder's roll file win.
               ...(saved ?? {}),
             };
@@ -395,7 +412,7 @@ export const useStore = create<State>((set, get) => {
       const points: [number, number][] =
         addSecond && f.neutralPoints.length ? [f.neutralPoints[0], p] : [p];
       try {
-        const analysis = await api.neutralize(f.id, points, f.orientation, f.crop, f.autoAnalysis);
+        const analysis = await api.neutralize(f.id, points, f.orientation, f.crop, f.autoAnalysis, dustParams(f));
         updateFrame(f.id, (x) => ({
           ...x,
           analysis,
@@ -554,13 +571,13 @@ export const useStore = create<State>((set, get) => {
 
     copy() {
       const f = current();
-      if (f) set({ clipboard: { adjustments: { ...f.adjustments }, analysis: f.analysis } });
+      if (f) set({ clipboard: { adjustments: { ...f.adjustments }, analysis: f.analysis, dust: { ...f.dust } } });
     },
 
     paste() {
       const { clipboard } = get();
       if (!clipboard) return;
-      updateTargets((f) => ({ ...f, adjustments: { ...clipboard.adjustments } }));
+      updateTargets((f) => ({ ...f, adjustments: { ...clipboard.adjustments }, dust: { ...clipboard.dust } }));
     },
 
     pasteWithBase() {
@@ -571,6 +588,7 @@ export const useStore = create<State>((set, get) => {
       updateTargets((f) => ({
         ...f,
         adjustments: { ...clipboard.adjustments },
+        dust: { ...clipboard.dust },
         analysis: clipboard.analysis,
         autoAnalysis: clipboard.analysis,
         neutralPoints: [],
@@ -586,7 +604,7 @@ export const useStore = create<State>((set, get) => {
       leaveModes();
       try {
         const analysis = await api.rollAnalysis(
-          frames.map((f) => ({ id: f.id, orientation: f.orientation, crop: f.crop })),
+          frames.map((f) => ({ id: f.id, orientation: f.orientation, crop: f.crop, dust: dustParams(f) })),
         );
         set((s) => ({
           frames: s.frames.map((f) =>
@@ -619,6 +637,10 @@ export const useStore = create<State>((set, get) => {
     toggleClipping: () => set((s) => ({ showClipping: !s.showClipping })),
     toggleBefore: () => set((s) => ({ showBefore: !s.showBefore, showNegative: false })),
     toggleNegative: () => set((s) => ({ showNegative: !s.showNegative, showBefore: false })),
+    toggleDefects: () => set((s) => ({ showDefects: !s.showDefects })),
+    setDust(patch) {
+      updateCurrent((f) => ({ ...f, dust: { ...f.dust, ...patch } }));
+    },
     setHistogram: (histogram) => set({ histogram }),
     setExportOpen: (exportOpen) => set({ exportOpen }),
     setExportProgress: (exportProgress) => set({ exportProgress }),

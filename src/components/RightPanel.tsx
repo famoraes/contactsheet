@@ -23,6 +23,7 @@ export function RightPanel() {
   const cropAspect = useStore((st) => st.cropAspect);
   const cropPortrait = useStore((st) => st.cropPortrait);
   const tab = useStore((st) => st.panelTab);
+  const showDefects = useStore((st) => st.showDefects);
   const s = useStore.getState();
   const [showKeys, setShowKeys] = useState(false);
   const disabled = !frame;
@@ -172,6 +173,41 @@ export function RightPanel() {
               </p>
             )}
           </section>
+
+          {frame?.hasIr && (
+            <section className="panel-section">
+              <div className="panel-head">
+                <h3>Dust removal</h3>
+                <div className="segmented segmented-small" title="Remove dust and scratches using the scan's infrared channel">
+                  <button className={!frame.dust.enabled ? "is-on" : ""} onClick={() => s.setDust({ enabled: false })}>
+                    Off
+                  </button>
+                  <button className={frame.dust.enabled ? "is-on" : ""} onClick={() => s.setDust({ enabled: true })}>
+                    On
+                  </button>
+                </div>
+              </div>
+              <Slider
+                label="Strength"
+                min={0}
+                resetTo={0.5}
+                value={frame.dust.strength}
+                disabled={!frame.dust.enabled}
+                hint="Higher catches fainter marks"
+                onChange={(v) => s.setDust({ strength: Math.max(0, v) })}
+              />
+              <div className="btn-row btn-row-top">
+                <button
+                  className={`btn btn-toggle${showDefects ? " is-on" : ""}`}
+                  disabled={!frame.dust.enabled}
+                  onClick={s.toggleDefects}
+                  title="Tint the areas dust removal repairs"
+                >
+                  Show treated areas
+                </button>
+              </div>
+            </section>
+          )}
 
           <section className="panel-section">
             <h3>Crop &amp; Rotate</h3>

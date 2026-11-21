@@ -5,10 +5,12 @@
 import * as api from "./api";
 import {
   DEFAULT_ADJUSTMENTS,
+  DEFAULT_DUST,
   EMPTY_META,
   type Adjustments,
   type Analysis,
   type Crop,
+  type Dust,
   type FrameMeta,
   type Orientation,
 } from "./types";
@@ -23,6 +25,7 @@ export interface SavedFrame {
   meta: FrameMeta;
   /** Base correction is shared with other frames (roll analysis / paste). */
   sharedBase: boolean;
+  dust: Dust;
 }
 
 interface RollFile {
@@ -49,6 +52,7 @@ export const pickSaved = (f: SavedFrame): SavedFrame => ({
   neutralPoints: f.neutralPoints,
   meta: f.meta,
   sharedBase: f.sharedBase,
+  dust: f.dust,
 });
 
 const SAVE_DELAY_MS = 600;
@@ -108,6 +112,7 @@ export async function savedFrame(path: string): Promise<SavedFrame | null> {
     neutralPoints: s.neutralPoints ?? [],
     meta: { ...EMPTY_META, ...s.meta, archive: s.meta?.archive ?? [] },
     sharedBase: s.sharedBase ?? false,
+    dust: { ...DEFAULT_DUST, ...s.dust },
   };
 }
 

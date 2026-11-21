@@ -4,7 +4,7 @@ import { useState } from "react";
 import { exportImages } from "../lib/api";
 import { isFilterActive, toExportMetadata } from "../lib/meta";
 import type { ExportProgress, ExportSummary } from "../lib/types";
-import { useStore, useVisibleFrames } from "../state/store";
+import { dustParams, useStore, useVisibleFrames } from "../state/store";
 
 type Scope = "selection" | "all";
 
@@ -49,6 +49,7 @@ export function ExportDialog() {
           orientation: f.orientation,
           crop: f.crop,
           metadata: embedMeta ? toExportMetadata(f.meta, archiveLevels) : null,
+          dust: dustParams(f),
         })),
         { outDir, tiff, jpeg, jpegQuality: quality, maxSize: resize ? maxSize : null },
       );

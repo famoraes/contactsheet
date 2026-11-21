@@ -237,3 +237,80 @@ fn zoom_tile_matches_full_render() {
     let edge = Window::new(&frame, frame.width() - 5, 0, 100, 10);
     assert_eq!((edge.width(), edge.height()), (5, 10));
 }
+
+/// A flat grey negative with dark dust specks, and an IR channel that sees only the dust.
+fn dusty_scan(w: u32, h: u32) -> (Vec<u16>, Vec<u16>, Vec<(u32, u32)>) {
+    let dust: Vec<(u32, u32)> = (0..12).map(|i| (20 + (i * 37) % (w - 40), 20 + (i * 53) % (h - 40))).collect();
+    let near = |x: u32, y: u32| dust.iter().any(|&(dx, dy)| x.abs_diff(dx) <= 2 && y.abs_diff(dy) <= 2);
+    let (mut rgb, mut ir) = (Vec::new(), Vec::new());
+    for y in 0..h {
+        for x in 0..w {
+            let k = if near(x, y) { 0.05 } else { 1.0 };
+            rgb.extend_from_slice(&[(26000.0 * k) as u16, (13000.0 * k) as u16, (6500.0 * k) as u16]);
+            ir.push((49000.0 * k) as u16);
+        }
+    }
+    (rgb, ir, dust)
+}
+
+#[test]
+fn decodes_ir_from_extra_page_or_fourth_channel() {
+    use tiff::{encoder::{colortype, TiffEncoder}, tags::Tag};
+    let dir = std::env::temp_dir().join(format!("negative-ir-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let (w, h) = (80u32, 60u32);
+    let (rgb, ir, _) = dusty_scan(w, h);
+
+    // RGB page + full-size grey page flagged as a mask (how some scanner software stores IR).
+    let paged = dir.join("paged.tif");
+    {
+        let mut enc = TiffEncoder::new(std::fs::File::create(&paged).unwrap()).unwrap();
+        enc.write_image::<colortype::RGB16>(w, h, &rgb).unwrap();
+        let mut img = enc.new_image::<colortype::Gray16>(w, h).unwrap();
+        img.encoder().write_tag(Tag::NewSubfileType, 4u32).unwrap();
+        img.write_data(&ir).unwrap();
+    }
+    let raw = negative::decode_tiff(&paged).unwrap();
+    assert_eq!((raw.channels, raw.ir.as_ref().map(|p| p.data.len())), (3, Some((w * h) as usize)));
+    assert_eq!(raw.ir.unwrap().data, ir);
+
+    // RGBI: the 4th channel is IR when it varies...
+    let rgbi: Vec<u16> = (0..(w * h) as usize).flat_map(|i| [rgb[i * 3], rgb[i * 3 + 1], rgb[i * 3 + 2], ir[i]]).collect();
+    let four = dir.join("rgbi.tif");
+    TiffEncoder::new(std::fs::File::create(&four).unwrap()).unwrap().write_image::<colortype::RGBA16>(w, h, &rgbi).unwrap();
+    assert_eq!(negative::decode_tiff(&four).unwrap().ir.unwrap().data, ir);
+    // ...but a constant alpha is just alpha.
+    let rgba: Vec<u16> = (0..(w * h) as usize).flat_map(|i| [rgb[i * 3], rgb[i * 3 + 1], rgb[i * 3 + 2], 65535]).collect();
+    let alpha = dir.join("rgba.tif");
+    TiffEncoder::new(std::fs::File::create(&alpha).unwrap()).unwrap().write_image::<colortype::RGBA16>(w, h, &rgba).unwrap();
+    assert!(negative::decode_tiff(&alpha).unwrap().ir.is_none());
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn export_removes_dust_with_ir() {
+    use negative::{export::export_source, ir::{clean_image, estimate_alignment, DustParams}, RawImage};
+    let dir = std::env::temp_dir().join(format!("negative-dust-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let (w, h) = (240u32, 200u32);
+    let (rgb, ir, dust) = dusty_scan(w, h);
+    let raw = RawImage {
+        width: w, height: h, channels: 3, bit_depth: 16,
+        samples: negative::decode::Samples::U16(rgb), orientation: Orientation::default(),
+        ir: Some(negative::ir::IrPlane { width: w, height: h, data: ir }),
+    };
+    let plane = raw.ir.as_ref().unwrap();
+    let cleaned = clean_image(&raw, plane, &estimate_alignment(&raw, plane), DustParams::default(), 1);
+    let an = Analysis { lo: [0.2; 3], hi: [1.4; 3] };
+    let settings = ExportSettings { out_dir: dir.join("out"), tiff16: true, jpeg_quality: None, max_size: None };
+    let files = export_source(&cleaned, &dir.join("dusty.tif"), &an, &Adjustments::default(), Orientation::default(), None, &settings, None).unwrap();
+    let out = negative::decode_tiff(&files[0]).unwrap();
+    let clean_px = out.rgb(5 * w as usize + 5);
+    for &(x, y) in &dust {
+        let p = out.rgb((y * w + x) as usize);
+        for c in 0..3 {
+            assert!((p[c] - clean_px[c]).abs() < 0.02, "dust at {x},{y} still visible: {p:?} vs {clean_px:?}");
+        }
+    }
+    std::fs::remove_dir_all(&dir).ok();
+}

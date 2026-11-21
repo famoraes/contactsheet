@@ -49,6 +49,8 @@ pub struct ViewOptions {
     pub show_negative: bool,
     /// Highlight clipped pixels (red = highlights, blue = shadows).
     pub show_clipping: bool,
+    /// Tint the defects found by IR dust removal (applied by the app, not here).
+    pub show_defects: bool,
 }
 
 /// The "paper": how normalized exposure becomes print tones. Presets pick one.

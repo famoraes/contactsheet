@@ -48,7 +48,20 @@ export interface Rect {
 export interface ViewOptions {
   showNegative: boolean;
   showClipping: boolean;
+  /** Tint what IR dust removal treats. */
+  showDefects: boolean;
 }
+
+/** IR dust removal for a frame. `strength` 0..1: higher catches fainter marks. */
+export interface Dust {
+  enabled: boolean;
+  strength: number;
+}
+
+export const DEFAULT_DUST: Dust = { enabled: true, strength: 0.5 };
+
+/** Sent to Rust: the settings when dust removal applies, else null. */
+export type DustParams = { strength: number } | null;
 
 export interface ImageMeta {
   id: number;
@@ -61,6 +74,8 @@ export interface ImageMeta {
   analysis: Analysis;
   /** From the file's TIFF Orientation tag. */
   orientation: Orientation;
+  /** The scan has an infrared channel, so dust removal is available. */
+  hasIr: boolean;
 }
 
 export interface ExportOptions {

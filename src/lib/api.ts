@@ -5,6 +5,7 @@ import type {
   ExportOptions,
   ExportSummary,
   Crop,
+  DustParams,
   ExportMetadata,
   ImageMeta,
   Orientation,
@@ -28,8 +29,9 @@ export async function renderPreview(
   orientation: Orientation,
   crop: Crop | null,
   view: ViewOptions,
+  dust: DustParams,
 ): Promise<PreviewFrame> {
-  const buf = await invoke<ArrayBuffer>("render_preview", { id, adjustments, analysis, orientation, crop, view });
+  const buf = await invoke<ArrayBuffer>("render_preview", { id, adjustments, analysis, orientation, crop, view, dust });
   const dv = new DataView(buf);
   const width = dv.getUint32(0, true);
   const height = dv.getUint32(4, true);
@@ -51,8 +53,9 @@ export async function renderRegion(
   crop: Crop | null,
   view: ViewOptions,
   rect: { x: number; y: number; w: number; h: number },
+  dust: DustParams,
 ): Promise<RegionTile> {
-  const buf = await invoke<ArrayBuffer>("render_region", { id, adjustments, analysis, orientation, crop, view, ...rect });
+  const buf = await invoke<ArrayBuffer>("render_region", { id, adjustments, analysis, orientation, crop, view, ...rect, dust });
   const dv = new DataView(buf);
   const [width, height] = [dv.getUint32(0, true), dv.getUint32(4, true)];
   return {
@@ -76,11 +79,11 @@ export async function renderThumbnail(
 }
 
 /** Re-analyse from the cropped frame (or the default border inset when uncropped). */
-export const recalc = (id: number, orientation: Orientation, crop: Crop | null) =>
-  invoke<Analysis>("recalc", { id, orientation, crop });
+export const recalc = (id: number, orientation: Orientation, crop: Crop | null, dust: DustParams) =>
+  invoke<Analysis>("recalc", { id, orientation, crop, dust });
 
 /** One base correction shared by all given frames (pooled analysis). */
-export const rollAnalysis = (items: { id: number; orientation: Orientation; crop: Crop | null }[]) =>
+export const rollAnalysis = (items: { id: number; orientation: Orientation; crop: Crop | null; dust: DustParams }[]) =>
   invoke<Analysis>("roll_analysis", { items });
 
 /** Picture area of the frame as displayed, or null when it has no border. */
@@ -94,7 +97,8 @@ export const neutralize = (
   orientation: Orientation,
   crop: Crop | null,
   analysis: Analysis,
-) => invoke<Analysis>("neutralize", { id, points, orientation, crop, analysis });
+  dust: DustParams,
+) => invoke<Analysis>("neutralize", { id, points, orientation, crop, analysis, dust });
 
 export const exportImages = (
   items: {
@@ -104,6 +108,7 @@ export const exportImages = (
     orientation: Orientation;
     crop: Crop | null;
     metadata: ExportMetadata | null;
+    dust: DustParams;
   }[],
   options: ExportOptions,
 ) => invoke<ExportSummary>("export_images", { items, options });

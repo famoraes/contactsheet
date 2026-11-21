@@ -6,7 +6,7 @@ use tiff::{
     ColorType,
 };
 
-use crate::{geometry::Orientation, image::RgbSource, Error, Result};
+use crate::{geometry::Orientation, image::RgbSource, ir::IrPlane, Error, Result};
 
 /// Raw decoded samples, kept in their native type to avoid a full-size f32 copy.
 pub enum Samples {
@@ -25,6 +25,8 @@ pub struct RawImage {
     pub samples: Samples,
     /// From the TIFF Orientation tag: how the stored pixels should be displayed.
     pub orientation: Orientation,
+    /// Infrared channel, when the scanner saved one (for dust removal).
+    pub ir: Option<IrPlane>,
 }
 
 /// Decode a scan: TIFF, or camera RAW / DNG by file extension.
@@ -80,6 +82,23 @@ pub fn decode_tiff(path: &Path) -> Result<RawImage> {
             "TIFF has {got} samples, expected {expected} (planar or tiled layouts may be unsupported)"
         )));
     }
+    // Infrared: either a 4th channel that isn't a real (constant) alpha, or a
+    // later full-size grayscale page (how some scanner software stores it).
+    let mut ir = if channels == 4 { fourth_channel_ir(&samples, width, height) } else { None };
+    while ir.is_none() && dec.more_images() {
+        if dec.next_image().is_err() {
+            break;
+        }
+        let gray = matches!(dec.colortype(), Ok(ColorType::Gray(8 | 16)));
+        if !gray || dec.dimensions().ok() != Some((width, height)) {
+            continue;
+        }
+        ir = match dec.read_image() {
+            Ok(DecodingResult::U16(v)) => Some(IrPlane { width, height, data: v }),
+            Ok(DecodingResult::U8(v)) => Some(IrPlane { width, height, data: v.into_iter().map(|x| x as u16 * 257).collect() }),
+            _ => None,
+        };
+    }
     Ok(RawImage {
         width,
         height,
@@ -87,7 +106,20 @@ pub fn decode_tiff(path: &Path) -> Result<RawImage> {
         bit_depth,
         samples,
         orientation,
+        ir,
     })
+}
+
+/// The 4th channel as IR, unless it is a constant (genuine, unused) alpha channel.
+fn fourth_channel_ir(samples: &Samples, width: u32, height: u32) -> Option<IrPlane> {
+    let n = width as usize * height as usize;
+    let data: Vec<u16> = match samples {
+        Samples::U16(v) => (0..n).map(|i| v[i * 4 + 3]).collect(),
+        Samples::U8(v) => (0..n).map(|i| v[i * 4 + 3] as u16 * 257).collect(),
+        Samples::F32(v) => (0..n).map(|i| (v[i * 4 + 3].clamp(0.0, 1.0) * 65535.0 + 0.5) as u16).collect(),
+    };
+    let (lo, hi) = data.iter().step_by(97).fold((u16::MAX, 0), |(a, b), &x| (a.min(x), b.max(x)));
+    (hi > lo).then_some(IrPlane { width, height, data })
 }
 
 #[inline(always)]

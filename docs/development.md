@@ -6,7 +6,7 @@ Tauri 2 desktop app: a Rust image core and a React + TypeScript UI.
 
 | Path | What |
 |---|---|
-| `crates/negative/` | Pure Rust core with no Tauri dependency: decoding (TIFF, RAW), analysis, the inversion pipeline, geometry, AutoCrop, rendering, export, metadata, ICC profile |
+| `crates/negative/` | Pure Rust core with no Tauri dependency: decoding (TIFF, RAW), analysis, the inversion pipeline, geometry, AutoCrop, IR dust removal (`ir.rs`), rendering, export, metadata, ICC profile |
 | `src-tauri/` | Tauri shell. `commands.rs` holds the in-memory image store and IPC commands; `hotfolder.rs` the folder watcher |
 | `src/` | React UI: `components/`, `state/store.ts` (Zustand), `lib/` (IPC wrappers, types, crop geometry, roll files, metadata, shortcuts) |
 | `docs/` | This documentation |

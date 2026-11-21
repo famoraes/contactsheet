@@ -2,7 +2,8 @@ import { useEffect, useRef, useState, type MouseEvent, type PointerEvent, type W
 import { renderPreview, renderRegion, type PreviewFrame } from "../lib/api";
 import { aspectRatio, cropPixels, FULL_CROP, MAX_ANGLE } from "../lib/crop";
 import { DEFAULT_ADJUSTMENTS, type Adjustments, type Analysis, type Crop, type Orientation, type ViewOptions } from "../lib/types";
-import { displaySize, useCurrentFrame, useStore, type Histogram } from "../state/store";
+import { displaySize, dustParams, useCurrentFrame, useStore, type Histogram } from "../state/store";
+import type { DustParams } from "../lib/types";
 import { CropOverlay } from "./CropOverlay";
 
 interface Request {
@@ -14,6 +15,7 @@ interface Request {
   view: ViewOptions;
   /** Rendering the "before" state; it must not replace the histogram. */
   before: boolean;
+  dust: DustParams;
 }
 
 interface TileRequest extends Request {
@@ -60,6 +62,7 @@ export function Viewer() {
   const showClipping = useStore((s) => s.showClipping);
   const showNegative = useStore((s) => s.showNegative);
   const showBefore = useStore((s) => s.showBefore);
+  const showDefects = useStore((s) => s.showDefects);
   const neutralMode = useStore((s) => s.neutralMode);
   const cropMode = useStore((s) => s.cropMode);
   const cropAspect = useStore((s) => s.cropAspect);
@@ -104,7 +107,7 @@ export function Viewer() {
         pending.current = null;
         const t0 = performance.now();
         try {
-          const out = await renderPreview(req.id, req.adjustments, req.analysis, req.orientation, req.crop, req.view);
+          const out = await renderPreview(req.id, req.adjustments, req.analysis, req.orientation, req.crop, req.view, req.dust);
           const canvas = canvasRef.current;
           if (!canvas) continue;
           if (canvas.width !== out.width || canvas.height !== out.height) {
@@ -113,7 +116,8 @@ export function Viewer() {
           }
           canvas.getContext("2d")!.putImageData(new ImageData(out.pixels, out.width, out.height), 0, 0);
           setImg((old) => (old?.w === out.width && old?.h === out.height ? old : { w: out.width, h: out.height }));
-          if (!req.before && !req.view.showNegative && !req.view.showClipping) setHistogram(computeHistogram(out));
+          if (!req.before && !req.view.showNegative && !req.view.showClipping && !req.view.showDefects)
+            setHistogram(computeHistogram(out));
           setRenderMs(performance.now() - t0);
           setError(null);
         } catch (e) {
@@ -142,6 +146,7 @@ export function Viewer() {
             req.crop,
             req.view,
             req.rect,
+            req.dust,
           );
           const canvas = tileRef.current;
           if (!canvas || pendingTile.current) continue; // superseded: skip drawing
@@ -172,8 +177,9 @@ export function Viewer() {
     analysis: before ? frame.autoAnalysis : frame.analysis,
     orientation: frame.orientation,
     crop: renderCrop,
-    view: { showClipping, showNegative },
+    view: { showClipping, showNegative, showDefects: showDefects && !!dustParams(frame) && !cropMode },
     before,
+    dust: dustParams(frame),
   };
   const key = request ? JSON.stringify(request) : "";
 
@@ -353,6 +359,9 @@ export function Viewer() {
         )}
         {before && <span className="badge badge-accent">Before · auto conversion</span>}
         {showNegative && <span className="badge badge-accent">Negative</span>}
+        {showDefects && frame && dustParams(frame) && !cropMode && (
+          <span className="badge">Dust removal: treated areas tinted</span>
+        )}
         {showClipping && (
           <span className="badge">
             Clipping <i className="swatch swatch-hi" /> highlights <i className="swatch swatch-lo" /> shadows

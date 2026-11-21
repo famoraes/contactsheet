@@ -10,12 +10,13 @@ convert, crop, describe, export.
 2. [Converting negatives](converting.md): the automatic conversion, sliders, neutral picker, looks
 3. [Working with a roll](roll-workflow.md): copy/paste, shared base correction, roll analysis
 4. [Crop, straighten and rotate](crop.md): manual crop, AutoCrop, rotate and flip
-5. [Viewing](viewing.md): zoom, before/after, clipping, histogram, image-only mode, the filmstrip
-6. [Metadata, saving and filtering](metadata.md): the Info panel, roll files, filter bar
-7. [Hot folder](hot-folder.md): convert scans as the scanner saves them
-8. [Export](export.md): TIFF/JPEG output, embedded metadata and colour profile
-9. [File formats](file-formats.md): supported inputs and scanning tips
-10. [Keyboard shortcuts](shortcuts.md)
+5. [Dust and scratch removal](dust-removal.md): automatic repair using the scan's infrared channel
+6. [Viewing](viewing.md): zoom, before/after, clipping, histogram, image-only mode, the filmstrip
+7. [Metadata, saving and filtering](metadata.md): the Info panel, roll files, filter bar
+8. [Hot folder](hot-folder.md): convert scans as the scanner saves them
+9. [Export](export.md): TIFF/JPEG output, embedded metadata and colour profile
+10. [File formats](file-formats.md): supported inputs and scanning tips
+11. [Keyboard shortcuts](shortcuts.md)
 
 ## For contributors
 
